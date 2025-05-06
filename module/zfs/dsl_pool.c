@@ -52,6 +52,10 @@
 #include <sys/trace_zfs.h>
 #include <sys/mmp.h>
 
+#include <sys/commitments.h>
+#include <sys/global_map.h>
+#include <sys/global_commitment_map.h>
+
 /*
  * ZFS Write Throttle
  * ------------------
@@ -470,6 +474,23 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
     dsl_crypto_params_t *dcp, uint64_t txg)
 {
 	int err;
+
+	if (not_initialized == 1) {
+		not_initialized = 0;
+		ccf_state_init(&ccf_zil_commitments);
+		zils_blocks_commitments.count = 0;
+		zils_blocks_commitments.cmt_data = NULL; 
+		zils_blocks_commitments.next = NULL;
+		ccf_zil_header_commitments = alloc_node(sizeof(dyn_array_commitments_t));
+		ccf_zil_header_commitments->count = 0;
+		ccf_zil_header_commitments->next = NULL;
+		ccf_zil_tail_commitments = alloc_node(sizeof(dyn_array_commitments_t));
+		ccf_zil_tail_commitments->count = 0;
+		ccf_zil_tail_commitments->next = NULL;
+		zfs_dbgmsg(" ccf_zil_header_commitments=%p\n", (void*)(ccf_zil_header_commitments));
+	}
+
+
 	dsl_pool_t *dp = dsl_pool_open_impl(spa, txg);
 	dmu_tx_t *tx = dmu_tx_create_assigned(dp, txg);
 #ifdef _KERNEL
@@ -569,6 +590,39 @@ dsl_pool_mos_diduse_space(dsl_pool_t *dp,
 	dp->dp_mos_compressed_delta += comp;
 	dp->dp_mos_uncompressed_delta += uncomp;
 	mutex_exit(&dp->dp_lock);
+}
+
+
+static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, const uint64_t txg) {
+	(void) ds;
+	(void) objset_count;
+	(void) txg;
+	#if 0
+	objset_t *os = ds->ds_objset;
+	char name[100];
+	dsl_dataset_name(os->os_dsl_dataset, name);
+	zil_header_t zh = os->os_phys->os_zil_header;
+	zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
+	zio_cksum_t* blk_zc_eck = get_serialized_hash(&cksum_map, &(cur_block_cksum));
+
+	zfs_dbgmsg(" [Dataset COMMITMENT os=%p (objset_count=%llu) name=%s\tzil_header] \
+		blk_seqno=%016llx:%016llx:%016llx:%016llx txg=%llu DVA=<%llu:%llx:%llx>     \
+		zc_eck=%016llx:%016llx:%016llx:%016llx\n", (void*)os, (u_longlong_t) objset_count,\
+		name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[0], \
+		(u_longlong_t)zh.zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh.zh_log.blk_cksum.zc_word[2],\
+		(u_longlong_t)zh.zh_log.blk_cksum.zc_word[3],  (u_longlong_t)txg, \
+		(u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva), \
+		(u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), \
+		(u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva), \
+		(u_longlong_t) blk_zc_eck->zc_word[0], (u_longlong_t) blk_zc_eck->zc_word[1],\
+		(u_longlong_t) blk_zc_eck->zc_word[2], (u_longlong_t) blk_zc_eck->zc_word[3]);
+
+	(*objset_count)++;
+	zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+	zil_header_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
+	append_cmts(&zils_blocks_commitments, zil_header_cmt);
+	release_hash(blk_zc_eck);
+	#endif
 }
 
 static void
@@ -697,6 +751,9 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		ASSERT(dsl_early_sync_task_verify(dp, txg));
 	}
 
+	int objset_count = 0;
+
+
 	/*
 	 * Write out all dirty blocks of dirty datasets. Note, this could
 	 * create a very large (+10k) zio tree.
@@ -711,6 +768,11 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		ASSERT(!list_link_active(&ds->ds_synced_link));
 		list_insert_tail(&synced_datasets, ds);
 		dsl_dataset_sync(ds, rio, tx);
+		// we might update the global state with the commitments 
+		// but these will be registered to 
+		// CCF only when the uberblock is going to be persisted
+		// as such we do not update CCF for a frozen pool
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 	VERIFY0(zio_wait(rio));
 
@@ -733,6 +795,11 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	for (ds = list_head(&synced_datasets); ds != NULL;
 	    ds = list_next(&synced_datasets, ds)) {
 		dmu_objset_sync_done(ds->ds_objset, tx);
+		// we might update the global state with the commitments 
+		// but these will be registered to 
+		// CCF only when the uberblock is going to be persisted
+		// as such we do not update CCF for a frozen pool
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 	taskq_wait(dp->dp_sync_taskq);
 
@@ -750,6 +817,12 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		ASSERT(list_link_active(&ds->ds_synced_link));
 		dmu_buf_rele(ds->ds_dbuf, ds);
 		dsl_dataset_sync(ds, rio, tx);
+
+		// we might update the global state with the commitments 
+		// but these will be registered to 
+		// CCF only when the uberblock is going to be persisted
+		// as such we do not update CCF for a frozen pool
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 
 		/*
 		 * Release any key mappings created by calls to
@@ -775,6 +848,12 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	 */
 	while ((ds = list_remove_head(&synced_datasets)) != NULL) {
 		objset_t *os = ds->ds_objset;
+
+		// we might update the global state with the commitments 
+		// but these will be registered to 
+		// CCF only when the uberblock is going to be persisted
+		// as such we do not update CCF for a frozen pool
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 
 		if (os->os_encrypted && !os->os_raw_receive &&
 		    !os->os_next_write_raw[txg & TXG_MASK]) {
@@ -807,7 +886,20 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	}
 
 	if (dmu_objset_is_dirty(mos, txg)) {
-		dsl_pool_sync_mos(dp, tx);
+		dsl_pool_sync_mos(dp, tx); 
+		{
+			//char name[ZFS_MAX_DATASET_NAME_LEN];
+			//objset_t* os = dp->dp_meta_objset;
+			// dsl_dataset_name(os->os_dsl_dataset, name);
+			//zil_header_t zh = os->os_phys->os_zil_header;
+			// zfs_dbgmsg(" [MOS (pool level) COMMITMENT: name=%s\tzil_header] cksum_seq_no=%llu txg=%llu DVA=<%llu:%llx:%llx>\n", name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ],  (u_longlong_t)txg, (u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva));
+			//zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+			// dump_zil_commitment2(zil_header_cmt);
+			// we might update the global state with the commitments but these will be registered to 
+			// CCF only when the uberblock is going to be persisted
+			// as such we do not update CCF for a frozen pool
+			// append_cmts(&zils_blocks_commitments, zil_header_cmt);
+		}
 	}
 
 	/*

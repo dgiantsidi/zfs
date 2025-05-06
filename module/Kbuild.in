@@ -430,6 +430,10 @@ ZFS_OBJS := \
 	zil.o \
 	zio.o \
 	zio_checksum.o \
+	map.o \
+	commitments.o \
+	global_commitment_map.o \
+	global_map.o \
 	zio_compress.o \
 	zio_inject.o \
 	zle.o \

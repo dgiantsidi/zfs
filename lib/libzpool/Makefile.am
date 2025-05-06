@@ -103,6 +103,8 @@ nodist_libzpool_la_SOURCES = \
 	module/zfs/dsl_deleg.c \
 	module/zfs/dsl_destroy.c \
 	module/zfs/dsl_dir.c \
+	module/zfs/global_commitment_map.c \
+	module/zfs/commitments.c \
 	module/zfs/dsl_pool.c \
 	module/zfs/dsl_prop.c \
 	module/zfs/dsl_scan.c \
@@ -187,6 +189,8 @@ nodist_libzpool_la_SOURCES = \
 	module/zfs/zil.c \
 	module/zfs/zio.c \
 	module/zfs/zio_checksum.c \
+	module/zfs/global_map.c \
+	module/zfs/map.c \
 	module/zfs/zio_compress.c \
 	module/zfs/zio_inject.c \
 	module/zfs/zle.c \
