@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 /*
  * Copyright 2004-2022 The OpenSSL Project Authors. All Rights Reserved.
  *

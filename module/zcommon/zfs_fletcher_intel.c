@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause OR GPL-2.0-only
 /*
  * Implement fast Fletcher4 with AVX2 instructions. (x86_64)
  *

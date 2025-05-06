@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 /*
 ** $Id: lobject.h,v 2.71.1.2 2014/05/07 14:14:58 roberto Exp $
 ** Type definitions for Lua objects
@@ -405,22 +404,19 @@ typedef TValue *StkId;  /* index to stack elements */
 /*
 ** Header for string value; string bytes follow the end of this structure
 */
-typedef struct TString {
-  union {
-    L_Umaxalign dummy;  /* ensures maximum alignment for strings */
-    struct {
-      CommonHeader;
-      lu_byte extra;  /* reserved words for short strings; "has hash" for longs */
-      unsigned int hash;
-      size_t len;  /* number of characters in string */
-    } tsv;
-  };
-  char contents[];
+typedef union TString {
+  L_Umaxalign dummy;  /* ensures maximum alignment for strings */
+  struct {
+    CommonHeader;
+    lu_byte extra;  /* reserved words for short strings; "has hash" for longs */
+    unsigned int hash;
+    size_t len;  /* number of characters in string */
+  } tsv;
 } TString;
 
 
 /* get the actual string (array of bytes) from a TString */
-#define getstr(ts)	((ts)->contents)
+#define getstr(ts)	cast(const char *, (ts) + 1)
 
 /* get the actual string (array of bytes) from a Lua value */
 #define svalue(o)       getstr(rawtsvalue(o))

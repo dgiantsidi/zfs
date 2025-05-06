@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -53,7 +52,6 @@ const zfs_deleg_perm_tab_t zfs_deleg_perm_tab[] = {
 	{ZFS_DELEG_PERM_MOUNT},
 	{ZFS_DELEG_PERM_PROMOTE},
 	{ZFS_DELEG_PERM_RECEIVE},
-	{ZFS_DELEG_PERM_RECEIVE_APPEND},
 	{ZFS_DELEG_PERM_RENAME},
 	{ZFS_DELEG_PERM_ROLLBACK},
 	{ZFS_DELEG_PERM_SNAPSHOT},

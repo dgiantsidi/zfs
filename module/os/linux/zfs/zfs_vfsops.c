@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -58,10 +57,8 @@
 #include <sys/dmu_objset.h>
 #include <sys/dsl_dir.h>
 #include <sys/objlist.h>
-#include <sys/zfeature.h>
 #include <sys/zpl.h>
 #include <linux/vfs_compat.h>
-#include <linux/fs.h>
 #include "zfs_comutil.h"
 
 enum {
@@ -116,7 +113,7 @@ zfsvfs_vfs_free(vfs_t *vfsp)
 	if (vfsp != NULL) {
 		if (vfsp->vfs_mntpoint != NULL)
 			kmem_strfree(vfsp->vfs_mntpoint);
-		mutex_destroy(&vfsp->vfs_mntpt_lock);
+
 		kmem_free(vfsp, sizeof (vfs_t));
 	}
 }
@@ -166,7 +163,7 @@ zfsvfs_parse_option(char *option, int token, substring_t *args, vfs_t *vfsp)
 		vfsp->vfs_do_xattr = B_TRUE;
 		break;
 	case TOKEN_XATTR:
-		vfsp->vfs_xattr = ZFS_XATTR_SA;
+		vfsp->vfs_xattr = ZFS_XATTR_DIR;
 		vfsp->vfs_do_xattr = B_TRUE;
 		break;
 	case TOKEN_NOXATTR:
@@ -198,11 +195,10 @@ zfsvfs_parse_option(char *option, int token, substring_t *args, vfs_t *vfsp)
 		vfsp->vfs_do_nbmand = B_TRUE;
 		break;
 	case TOKEN_MNTPOINT:
-		if (vfsp->vfs_mntpoint != NULL)
-			kmem_strfree(vfsp->vfs_mntpoint);
 		vfsp->vfs_mntpoint = match_strdup(&args[0]);
 		if (vfsp->vfs_mntpoint == NULL)
 			return (SET_ERROR(ENOMEM));
+
 		break;
 	default:
 		break;
@@ -221,7 +217,6 @@ zfsvfs_parse_options(char *mntopts, vfs_t **vfsp)
 	int error;
 
 	tmp_vfsp = kmem_zalloc(sizeof (vfs_t), KM_SLEEP);
-	mutex_init(&tmp_vfsp->vfs_mntpt_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	if (mntopts != NULL) {
 		substring_t args[MAX_OPT_ARGS];
@@ -276,6 +271,7 @@ zfs_sync(struct super_block *sb, int wait, cred_t *cr)
 	if (zfsvfs != NULL) {
 		/*
 		 * Sync a specific filesystem.
+		 * when userspace run syncfs(int fd)
 		 */
 		dsl_pool_t *dp;
 		int error;
@@ -293,9 +289,13 @@ zfs_sync(struct super_block *sb, int wait, cred_t *cr)
 			return (0);
 		}
 
-		if (zfsvfs->z_log != NULL)
-			zil_commit(zfsvfs->z_log, 0);
+		//if (zfsvfs->z_log != NULL)
+		        //we dont need to write tx to zil since we are triggering txg sync
+			//zil_commit(zfsvfs->z_log, 0);
 
+		// triggers txg sync
+		// TODO: user currently open txg number instead of 0
+		txg_wait_synced(dp, 0);
 		zfs_exit(zfsvfs, FTAG);
 	} else {
 		/*
@@ -453,12 +453,6 @@ acl_inherit_changed_cb(void *arg, uint64_t newval)
 	((zfsvfs_t *)arg)->z_acl_inherit = newval;
 }
 
-static void
-longname_changed_cb(void *arg, uint64_t newval)
-{
-	((zfsvfs_t *)arg)->z_longname = newval;
-}
-
 static int
 zfs_register_callbacks(vfs_t *vfsp)
 {
@@ -519,8 +513,6 @@ zfs_register_callbacks(vfs_t *vfsp)
 	    zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_NBMAND), nbmand_changed_cb, zfsvfs);
-	error = error ? error : dsl_prop_register(ds,
-	    zfs_prop_to_name(ZFS_PROP_LONGNAME), longname_changed_cb, zfsvfs);
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
 		goto unregister;
@@ -642,7 +634,7 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	zfsvfs->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
-
+	zfs_dbgmsg(" associate this zfsvfs with the given objset, which must be owned. This will cache a bunch of on-disk state from the objset in the zfsvfs.\n");
 	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zfsvfs->z_version);
 	if (error != 0)
 		return (error);
@@ -790,7 +782,7 @@ zfsvfs_create(const char *osname, boolean_t readonly, zfsvfs_t **zfvp)
 	boolean_t ro = (readonly || (strchr(osname, '@') != NULL));
 
 	zfsvfs = kmem_zalloc(sizeof (zfsvfs_t), KM_SLEEP);
-
+	zfs_dbgmsg("\n");
 	error = dmu_objset_own(osname, DMU_OST_ZFS, ro, B_TRUE, zfsvfs, &os);
 	if (error != 0) {
 		kmem_free(zfsvfs, sizeof (zfsvfs_t));
@@ -798,7 +790,7 @@ zfsvfs_create(const char *osname, boolean_t readonly, zfsvfs_t **zfvp)
 	}
 
 	error = zfsvfs_create_impl(zfvp, zfsvfs, os);
-
+	zfs_dbgmsg("\n");
 	return (error);
 }
 
@@ -835,7 +827,7 @@ zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os)
 		    sizeof (znode_hold_t), offsetof(znode_hold_t, zh_node));
 		mutex_init(&zfsvfs->z_hold_locks[i], NULL, MUTEX_DEFAULT, NULL);
 	}
-
+	zfs_dbgmsg("\n");
 	error = zfsvfs_init(zfsvfs, os);
 	if (error != 0) {
 		dmu_objset_disown(os, B_TRUE, zfsvfs);
@@ -855,6 +847,8 @@ zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os)
 static int
 zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 {
+	zfs_dbgmsg("*************** START ***************\n");
+
 	int error;
 	boolean_t readonly = zfs_is_readonly(zfsvfs);
 
@@ -928,8 +922,10 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 				zil_destroy(zfsvfs->z_log, B_FALSE);
 			} else {
 				zfsvfs->z_replay = B_TRUE;
+				zfs_dbgmsg(" HERE CHECK ZIL COMMITMENTS before zil_replay\n");
 				zil_replay(zfsvfs->z_os, zfsvfs,
 				    zfs_replay_vector);
+				zfs_dbgmsg(" after zil_replay\n");
 				zfsvfs->z_replay = B_FALSE;
 			}
 		}
@@ -949,6 +945,7 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 	mutex_enter(&zfsvfs->z_os->os_user_ptr_lock);
 	dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
 	mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
+	zfs_dbgmsg("*************** END ***************\n");
 
 	return (0);
 }
@@ -1152,8 +1149,7 @@ zfs_statvfs(struct inode *ip, struct kstatfs *statp)
 	statp->f_fsid.val[0] = (uint32_t)fsid;
 	statp->f_fsid.val[1] = (uint32_t)(fsid >> 32);
 	statp->f_type = ZFS_SUPER_MAGIC;
-	statp->f_namelen =
-	    zfsvfs->z_longname ? (ZAP_MAXNAMELEN_NEW - 1) : (MAXNAMELEN - 1);
+	statp->f_namelen = MAXNAMELEN - 1;
 
 	/*
 	 * We have all of 40 characters to stuff a string here.
@@ -1192,6 +1188,64 @@ zfs_root(zfsvfs_t *zfsvfs, struct inode **ipp)
 }
 
 /*
+ * Linux kernels older than 3.1 do not support a per-filesystem shrinker.
+ * To accommodate this we must improvise and manually walk the list of znodes
+ * attempting to prune dentries in order to be able to drop the inodes.
+ *
+ * To avoid scanning the same znodes multiple times they are always rotated
+ * to the end of the z_all_znodes list.  New znodes are inserted at the
+ * end of the list so we're always scanning the oldest znodes first.
+ */
+static int
+zfs_prune_aliases(zfsvfs_t *zfsvfs, unsigned long nr_to_scan)
+{
+	znode_t **zp_array, *zp;
+	int max_array = MIN(nr_to_scan, PAGE_SIZE * 8 / sizeof (znode_t *));
+	int objects = 0;
+	int i = 0, j = 0;
+
+	zp_array = vmem_zalloc(max_array * sizeof (znode_t *), KM_SLEEP);
+
+	mutex_enter(&zfsvfs->z_znodes_lock);
+	while ((zp = list_head(&zfsvfs->z_all_znodes)) != NULL) {
+
+		if ((i++ > nr_to_scan) || (j >= max_array))
+			break;
+
+		ASSERT(list_link_active(&zp->z_link_node));
+		list_remove(&zfsvfs->z_all_znodes, zp);
+		list_insert_tail(&zfsvfs->z_all_znodes, zp);
+
+		/* Skip active znodes and .zfs entries */
+		if (MUTEX_HELD(&zp->z_lock) || zp->z_is_ctldir)
+			continue;
+
+		if (igrab(ZTOI(zp)) == NULL)
+			continue;
+
+		zp_array[j] = zp;
+		j++;
+	}
+	mutex_exit(&zfsvfs->z_znodes_lock);
+
+	for (i = 0; i < j; i++) {
+		zp = zp_array[i];
+
+		ASSERT3P(zp, !=, NULL);
+		d_prune_aliases(ZTOI(zp));
+
+		if (atomic_read(&ZTOI(zp)->i_count) == 1)
+			objects++;
+
+		zrele(zp);
+	}
+
+	vmem_free(zp_array, max_array * sizeof (znode_t *));
+
+	return (objects);
+}
+
+/*
  * The ARC has requested that the filesystem drop entries from the dentry
  * and inode caches.  This can occur when the ARC needs to free meta data
  * blocks but can't because they are all pinned by entries in these caches.
@@ -1216,30 +1270,43 @@ zfs_prune(struct super_block *sb, unsigned long nr_to_scan, int *objects)
 	if ((error = zfs_enter(zfsvfs, FTAG)) != 0)
 		return (error);
 
-#ifdef SHRINKER_NUMA_AWARE
+#if defined(HAVE_SPLIT_SHRINKER_CALLBACK) && \
+	defined(SHRINK_CONTROL_HAS_NID) && \
+	defined(SHRINKER_NUMA_AWARE)
 	if (shrinker->flags & SHRINKER_NUMA_AWARE) {
-		long tc = 1;
-		for_each_online_node(sc.nid) {
-			long c = shrinker->count_objects(shrinker, &sc);
-			if (c  == 0 || c == SHRINK_EMPTY)
-				continue;
-			tc += c;
-		}
 		*objects = 0;
 		for_each_online_node(sc.nid) {
-			long c = shrinker->count_objects(shrinker, &sc);
-			if (c  == 0 || c == SHRINK_EMPTY)
-				continue;
-			if (c > tc)
-				tc = c;
-			sc.nr_to_scan = mult_frac(nr_to_scan, c, tc) + 1;
 			*objects += (*shrinker->scan_objects)(shrinker, &sc);
+			/*
+			 * reset sc.nr_to_scan, modified by
+			 * scan_objects == super_cache_scan
+			 */
+			sc.nr_to_scan = nr_to_scan;
 		}
 	} else {
 			*objects = (*shrinker->scan_objects)(shrinker, &sc);
 	}
-#else
+
+#elif defined(HAVE_SPLIT_SHRINKER_CALLBACK)
 	*objects = (*shrinker->scan_objects)(shrinker, &sc);
+#elif defined(HAVE_SINGLE_SHRINKER_CALLBACK)
+	*objects = (*shrinker->shrink)(shrinker, &sc);
+#elif defined(HAVE_D_PRUNE_ALIASES)
+#define	D_PRUNE_ALIASES_IS_DEFAULT
+	*objects = zfs_prune_aliases(zfsvfs, nr_to_scan);
+#else
+#error "No available dentry and inode cache pruning mechanism."
+#endif
+
+#if defined(HAVE_D_PRUNE_ALIASES) && !defined(D_PRUNE_ALIASES_IS_DEFAULT)
+#undef	D_PRUNE_ALIASES_IS_DEFAULT
+	/*
+	 * Fall back to zfs_prune_aliases if the kernel's per-superblock
+	 * shrinker couldn't free anything, possibly due to the inodes being
+	 * allocated in a different memcg.
+	 */
+	if (*objects == 0)
+		*objects = zfs_prune_aliases(zfsvfs, nr_to_scan);
 #endif
 
 	zfs_exit(zfsvfs, FTAG);
@@ -1398,11 +1465,15 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	return (0);
 }
 
-static atomic_long_t zfs_bdi_seq = ATOMIC_LONG_INIT(0);
+#if defined(HAVE_SUPER_SETUP_BDI_NAME)
+atomic_long_t zfs_bdi_seq = ATOMIC_LONG_INIT(0);
+#endif
 
 int
 zfs_domount(struct super_block *sb, zfs_mnt_t *zm, int silent)
 {
+	zfs_dbgmsg("*************** START ***************\n");
+
 	const char *osname = zm->mnt_osname;
 	struct inode *root_inode = NULL;
 	uint64_t recordsize;
@@ -1459,8 +1530,7 @@ zfs_domount(struct super_block *sb, zfs_mnt_t *zm, int silent)
 	sb->s_blocksize = recordsize;
 	sb->s_blocksize_bits = ilog2(recordsize);
 
-	error = -super_setup_bdi_name(sb, "%.28s-%ld", "zfs",
-	    atomic_long_inc_return(&zfs_bdi_seq));
+	error = -zpl_bdi_setup(sb, "zfs");
 	if (error)
 		goto out;
 
@@ -1500,7 +1570,7 @@ zfs_domount(struct super_block *sb, zfs_mnt_t *zm, int silent)
 	}
 
 	/* Allocate a root inode for the filesystem. */
-	error = zfs_root(zfsvfs, &root_inode);
+	error = zfs_root(zfsvfs,  &root_inode);
 	if (error) {
 		(void) zfs_umount(sb);
 		zfsvfs = NULL; /* avoid double-free; first in zfs_umount */
@@ -1532,6 +1602,7 @@ out:
 		 */
 		sb->s_fs_info = NULL;
 	}
+	zfs_dbgmsg("*************** END ***************\n");
 
 	return (error);
 }
@@ -1588,6 +1659,7 @@ zfs_umount(struct super_block *sb)
 		arc_remove_prune_callback(zfsvfs->z_arc_prune);
 	VERIFY(zfsvfs_teardown(zfsvfs, B_TRUE) == 0);
 	os = zfsvfs->z_os;
+	zpl_bdi_destroy(sb);
 
 	/*
 	 * z_os will be NULL if there was an error in
@@ -1703,14 +1775,8 @@ zfs_vget(struct super_block *sb, struct inode **ipp, fid_t *fidp)
 	/* A zero fid_gen means we are in the .zfs control directories */
 	if (fid_gen == 0 &&
 	    (object == ZFSCTL_INO_ROOT || object == ZFSCTL_INO_SNAPDIR)) {
-		if (zfsvfs->z_show_ctldir == ZFS_SNAPDIR_DISABLED) {
-			zfs_exit(zfsvfs, FTAG);
-			return (SET_ERROR(ENOENT));
-		}
-
 		*ipp = zfsvfs->z_ctldir;
 		ASSERT(*ipp != NULL);
-
 		if (object == ZFSCTL_INO_SNAPDIR) {
 			VERIFY(zfsctl_root_lookup(*ipp, "snapshot", ipp,
 			    0, kcred, NULL, NULL) == 0);
@@ -1962,7 +2028,7 @@ zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers)
 		    ZFS_SA_ATTRS);
 		dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
 	}
-	error = dmu_tx_assign(tx, DMU_TX_WAIT);
+	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
 		dmu_tx_abort(tx);
 		return (error);
@@ -2044,6 +2110,9 @@ zfs_init(void)
 	zfs_znode_init();
 	dmu_objset_register_type(DMU_OST_ZFS, zpl_get_file_info);
 	register_filesystem(&zpl_fs_type);
+#ifdef HAVE_VFS_FILE_OPERATIONS_EXTEND
+	register_fo_extend(&zpl_file_operations);
+#endif
 }
 
 void
@@ -2054,6 +2123,9 @@ zfs_fini(void)
 	 */
 	taskq_wait(system_delay_taskq);
 	taskq_wait(system_taskq);
+#ifdef HAVE_VFS_FILE_OPERATIONS_EXTEND
+	unregister_fo_extend(&zpl_file_operations);
+#endif
 	unregister_filesystem(&zpl_fs_type);
 	zfs_znode_fini();
 	zfsctl_fini();

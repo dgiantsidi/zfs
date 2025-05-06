@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -169,7 +168,7 @@ chksum_run(chksum_stat_t *cs, abd_t *abd, void *ctx, int round,
 	start = gethrtime();
 	do {
 		for (l = 0; l < loops; l++, run_count++)
-			cs->func(abd, size, ctx, &zcp);
+			cs->func(abd, size, NULL, ctx, &zcp);
 
 		run_time_ns = gethrtime() - start;
 	} while (run_time_ns < MSEC2NSEC(1));

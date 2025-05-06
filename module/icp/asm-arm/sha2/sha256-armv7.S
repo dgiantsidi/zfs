@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0
 /*
  * Copyright 2004-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
@@ -22,11 +21,8 @@
 
 #if defined(__arm__)
 
-#ifndef __ARM_ARCH
-# define __ARM_ARCH__	7
-#else
-# define __ARM_ARCH__	__ARM_ARCH
-#endif
+#define	__ARM_ARCH__      7
+#define	__ARM_MAX_ARCH__  7
 
 #if defined(__thumb2__)
 .syntax unified
@@ -1838,7 +1834,6 @@ zfs_sha256_block_armv7:
 #endif
 .size	zfs_sha256_block_armv7,.-zfs_sha256_block_armv7
 
-#if __ARM_ARCH__ >= 7
 .arch	armv7-a
 .fpu	neon
 
@@ -2771,5 +2766,4 @@ zfs_sha256_block_armv8:
 	bx	lr		@ bx lr
 .size	zfs_sha256_block_armv8,.-zfs_sha256_block_armv8
 
-#endif // #if __ARM_ARCH__ >= 7
-#endif // #if defined(__arm__)
+#endif

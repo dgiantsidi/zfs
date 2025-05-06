@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -23,7 +22,6 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
- * Copyright (c) 2024, Klara, Inc.
  */
 
 #include <sys/dmu.h>
@@ -577,6 +575,7 @@ dmu_tx_hold_zap_impl(dmu_tx_hold_t *txh, const char *name)
 	dmu_tx_t *tx = txh->txh_tx;
 	dnode_t *dn = txh->txh_dnode;
 	int err;
+	extern int zap_micro_max_size;
 
 	ASSERT(tx->tx_txg == 0);
 
@@ -592,7 +591,7 @@ dmu_tx_hold_zap_impl(dmu_tx_hold_t *txh, const char *name)
 	 *    - 2 grown ptrtbl blocks
 	 */
 	(void) zfs_refcount_add_many(&txh->txh_space_towrite,
-	    zap_get_micro_max_size(tx->tx_pool->dp_spa), FTAG);
+	    zap_micro_max_size, FTAG);
 
 	if (dn == NULL)
 		return;
@@ -800,14 +799,6 @@ dmu_tx_dirty_buf(dmu_tx_t *tx, dmu_buf_impl_t *db)
 				break;
 			case THT_CLONE:
 				if (blkid >= beginblk && blkid <= endblk)
-					match_offset = TRUE;
-				/*
-				 * They might have to increase nlevels,
-				 * thus dirtying the new TLIBs.  Or the
-				 * might have to change the block size,
-				 * thus dirying the new lvl=0 blk=0.
-				 */
-				if (blkid == 0)
 					match_offset = TRUE;
 				break;
 			default:
@@ -1017,10 +1008,10 @@ dmu_tx_delay(dmu_tx_t *tx, uint64_t dirty)
  * decreasing performance.
  */
 static int
-dmu_tx_try_assign(dmu_tx_t *tx, uint64_t flags)
+dmu_tx_try_assign(dmu_tx_t *tx, uint64_t txg_how)
 {
 	spa_t *spa = tx->tx_pool->dp_spa;
-
+	
 	ASSERT0(tx->tx_txg);
 
 	if (tx->tx_err) {
@@ -1037,11 +1028,11 @@ dmu_tx_try_assign(dmu_tx_t *tx, uint64_t flags)
 		 * Otherwise, return EIO so that an error can get
 		 * propagated back to the VOP calls.
 		 *
-		 * Note that we always honor the `flags` flag regardless
+		 * Note that we always honor the txg_how flag regardless
 		 * of the failuremode setting.
 		 */
 		if (spa_get_failmode(spa) == ZIO_FAILURE_MODE_CONTINUE &&
-		    !(flags & DMU_TX_WAIT))
+		    !(txg_how & TXG_WAIT))
 			return (SET_ERROR(EIO));
 
 		return (SET_ERROR(ERESTART));
@@ -1123,7 +1114,7 @@ dmu_tx_try_assign(dmu_tx_t *tx, uint64_t flags)
 		if (err != 0)
 			return (err);
 	}
-
+	zfs_dbgmsg(" tx->tx_txg=%llu\n", (u_longlong_t)tx->tx_txg);
 	DMU_TX_STAT_BUMP(dmu_tx_assigned);
 
 	return (0);
@@ -1165,20 +1156,20 @@ dmu_tx_unassign(dmu_tx_t *tx)
 }
 
 /*
- * Assign tx to a transaction group; `flags` is a bitmask:
+ * Assign tx to a transaction group; txg_how is a bitmask:
  *
- * If DMU_TX_WAIT is set and the currently open txg is full, this function
+ * If TXG_WAIT is set and the currently open txg is full, this function
  * will wait until there's a new txg. This should be used when no locks
  * are being held. With this bit set, this function will only fail if
  * we're truly out of space (or over quota).
  *
- * If DMU_TX_WAIT is *not* set and we can't assign into the currently open
+ * If TXG_WAIT is *not* set and we can't assign into the currently open
  * txg without blocking, this function will return immediately with
  * ERESTART. This should be used whenever locks are being held.  On an
  * ERESTART error, the caller should drop all locks, call dmu_tx_wait(),
  * and try again.
  *
- * If DMU_TX_NOTHROTTLE is set, this indicates that this tx should not be
+ * If TXG_NOTHROTTLE is set, this indicates that this tx should not be
  * delayed due on the ZFS Write Throttle (see comments in dsl_pool.c for
  * details on the throttle). This is used by the VFS operations, after
  * they have already called dmu_tx_wait() (though most likely on a
@@ -1201,24 +1192,24 @@ dmu_tx_unassign(dmu_tx_t *tx)
  *     1 <- dmu_tx_get_txg(T3)
  */
 int
-dmu_tx_assign(dmu_tx_t *tx, uint64_t flags)
+dmu_tx_assign(dmu_tx_t *tx, uint64_t txg_how)
 {
 	int err;
 
 	ASSERT(tx->tx_txg == 0);
-	ASSERT0(flags & ~(DMU_TX_WAIT | DMU_TX_NOTHROTTLE));
+	ASSERT0(txg_how & ~(TXG_WAIT | TXG_NOTHROTTLE));
 	ASSERT(!dsl_pool_sync_context(tx->tx_pool));
 
 	/* If we might wait, we must not hold the config lock. */
-	IMPLY((flags & DMU_TX_WAIT), !dsl_pool_config_held(tx->tx_pool));
+	IMPLY((txg_how & TXG_WAIT), !dsl_pool_config_held(tx->tx_pool));
 
-	if ((flags & DMU_TX_NOTHROTTLE))
+	if ((txg_how & TXG_NOTHROTTLE))
 		tx->tx_dirty_delayed = B_TRUE;
 
-	while ((err = dmu_tx_try_assign(tx, flags)) != 0) {
+	while ((err = dmu_tx_try_assign(tx, txg_how)) != 0) {
 		dmu_tx_unassign(tx);
 
-		if (err != ERESTART || !(flags & DMU_TX_WAIT))
+		if (err != ERESTART || !(txg_how & TXG_WAIT))
 			return (err);
 
 		dmu_tx_wait(tx);
@@ -1263,9 +1254,9 @@ dmu_tx_wait(dmu_tx_t *tx)
 
 		/*
 		 * Note: setting tx_dirty_delayed only has effect if the
-		 * caller used DMU_TX_WAIT.  Otherwise they are going to
+		 * caller used TX_WAIT.  Otherwise they are going to
 		 * destroy this tx and try again.  The common case,
-		 * zfs_write(), uses DMU_TX_WAIT.
+		 * zfs_write(), uses TX_WAIT.
 		 */
 		tx->tx_dirty_delayed = B_TRUE;
 	} else if (spa_suspended(spa) || tx->tx_lasttried_txg == 0) {
@@ -1386,13 +1377,6 @@ dmu_tx_pool(dmu_tx_t *tx)
 	return (tx->tx_pool);
 }
 
-/*
- * Register a callback to be executed at the end of a TXG.
- *
- * Note: This currently exists for outside consumers, specifically the ZFS OSD
- * for Lustre. Please do not remove before checking that project. For examples
- * on how to use this see `ztest_commit_callback`.
- */
 void
 dmu_tx_callback_register(dmu_tx_t *tx, dmu_tx_callback_func_t *func, void *data)
 {
@@ -1536,8 +1520,11 @@ dmu_tx_hold_sa(dmu_tx_t *tx, sa_handle_t *hdl, boolean_t may_grow)
 		ASSERT(tx->tx_txg == 0);
 		dmu_tx_hold_spill(tx, object);
 	} else {
+		dnode_t *dn;
+
 		DB_DNODE_ENTER(db);
-		if (DB_DNODE(db)->dn_have_spill) {
+		dn = DB_DNODE(db);
+		if (dn->dn_have_spill) {
 			ASSERT(tx->tx_txg == 0);
 			dmu_tx_hold_spill(tx, object);
 		}

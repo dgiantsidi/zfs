@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -47,6 +46,9 @@
 #include <sys/brt.h>
 #include <sys/wmsum.h>
 
+#include <sys/global_map.h>
+#include <sys/commitments.h>
+#include <sys/global_commitment_map.h>
 /*
  * The ZFS Intent Log (ZIL) saves "transaction records" (itxs) of system
  * calls that change the file system. Each itx has enough information to
@@ -93,6 +95,188 @@
  * function (and the comments within it) for more details.
  */
 static uint_t zfs_commit_timeout_pct = 10;
+static int remount = 0; // is the zil_parse() 
+static int
+zil_prt_rec_write_cb(void *data, size_t len, void *unused)
+{
+	#define print_buf_sz  950
+	(void) unused;
+	char *cdata = data;
+	char tmp_buf[print_buf_sz];
+	len = MIN(len, print_buf_sz);
+	for (size_t i = 0; i < len; i++) {
+		if (isprint(*cdata)) {
+			tmp_buf[i] = *cdata;
+			// zfs_dbgmsg("%c ", *cdata);
+		}
+		else {
+			zfs_dbgmsg("%2X", *cdata);
+		}
+		cdata++;
+	}
+	zfs_dbgmsg(" %s\n", tmp_buf);
+	return (0);
+}
+
+#if 0
+static int
+print_log_record(zilog_t *zilog, const lr_t *lr, void *arg, uint64_t claim_txg)
+{
+	(void) arg;
+	(void) claim_txg;
+	const lr_write_t *lwr = (lr_write_t*)lr;
+	abd_t *data;
+	const blkptr_t *bp = &lwr->lr_blkptr;
+	zbookmark_phys_t zb;
+
+	zfs_dbgmsg("\tlog record (bp=%p)\t%s len %6llu, txg %llu, seq %llu\n", (void*)bp,
+	    (lr->lrc_txtype & TX_CI) ? "CI-" : "",
+	    (u_longlong_t)lr->lrc_reclen,
+	    (u_longlong_t)lr->lrc_txg,
+	    (u_longlong_t)lr->lrc_seq);
+
+
+	if (lwr->lr_common.lrc_reclen == sizeof (lr_write_t)) {
+		if (BP_IS_HOLE(bp)) {
+			return -1;
+		}
+
+		if (bp->blk_birth < zilog->zl_header->zh_claim_txg) {
+			zfs_dbgmsg(" block already committed\n");
+			return -1;
+		}
+
+		ASSERT3U(BP_GET_LSIZE(bp), !=, 0);
+		SET_BOOKMARK(&zb, dmu_objset_id(zilog->zl_os),
+		    lwr->lr_foid, ZB_ZIL_LEVEL,
+		    lwr->lr_offset / BP_GET_LSIZE(bp));
+
+		data = abd_alloc(BP_GET_LSIZE(bp), B_FALSE);
+		int error = zio_wait(zio_read(NULL, zilog->zl_spa,
+		    bp, data, BP_GET_LSIZE(bp), NULL, NULL,
+		    ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &zb));
+		if (error) {
+			zfs_dbgmsg(" error\n");
+		}
+		abd_iterate_func(data, 0, lwr->lr_length, zil_prt_rec_write_cb, NULL);
+		abd_free(data);
+	}
+	else {
+		/* data is stored after the end of the lr_write record */
+		data = abd_alloc(lwr->lr_length, B_FALSE);
+		abd_copy_from_buf(data, lwr + 1, lwr->lr_length);
+		abd_iterate_func(data, 0, lwr->lr_length, zil_prt_rec_write_cb, NULL);
+		abd_free(data);
+	}
+	
+
+	return (0);
+}
+#endif
+#if 0
+static int print_log_block (zilog_t *zilog, const blkptr_t *bp, void*, uint64_t) {
+
+	char blkbuf[BP_SPRINTF_LEN + 10];
+	(void) zilog;
+	strcpy(blkbuf, ", ");
+	snprintf_blkptr(blkbuf + strlen(blkbuf),
+		    sizeof (blkbuf) - strlen(blkbuf), bp);
+
+	zfs_dbgmsg("\t bp=%p, block seqno %llu, txg=%llu %s\n", (void*)bp,
+	    (u_longlong_t)bp->blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)bp->blk_birth, blkbuf);
+
+	return (0);
+}
+#endif
+static void print_zilc_zc_eck(const zil_chain_t* chain) {
+	zfs_dbgmsg(" chain->zc_eck.zec_cksum=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)chain->zc_eck.zec_cksum.zc_word[0], (u_longlong_t)chain->zc_eck.zec_cksum.zc_word[1], (u_longlong_t)chain->zc_eck.zec_cksum.zc_word[2], (u_longlong_t)chain->zc_eck.zec_cksum.zc_word[3]);
+}
+
+static void print_blk(const blkptr_t* bp) {
+	char type[256];
+	char buf[500];
+	const char *checksum = NULL;
+	const char *compress = NULL;
+
+	if (bp != NULL) {
+		if (BP_GET_TYPE(bp) & DMU_OT_NEWTYPE) {
+			dmu_object_byteswap_t bswap =
+			    DMU_OT_BYTESWAP(BP_GET_TYPE(bp));
+			(void) snprintf(type, sizeof (type), "bswap %s %s",
+			    DMU_OT_IS_METADATA(BP_GET_TYPE(bp)) ?
+			    "metadata" : "data",
+			    dmu_ot_byteswap[bswap].ob_name);
+		} else {
+			(void) strlcpy(type, dmu_ot[BP_GET_TYPE(bp)].ot_name,
+			    sizeof (type));
+		}
+		if (BP_IS_EMBEDDED(bp))
+			checksum = "BP_IS_EMBEDDED";
+		else 
+			checksum = "NOT EMBEDDED";
+		#if 0
+		if (!BP_IS_EMBEDDED(bp)) {
+			checksum =
+			    zio_checksum_table[BP_GET_CHECKSUM(bp)].ci_name;
+		}
+		#endif
+		compress = zio_compress_table[BP_GET_COMPRESS(bp)].ci_name;
+	}
+
+	SNPRINTF_BLKPTR(kmem_scnprintf, ' ', buf, 500, bp, type, checksum,
+	    compress);
+	zfs_dbgmsg("%s\n", buf);
+
+}
+
+static void print_zil_header(zilog_t* zilog) {
+	const zil_header_t *zh = zilog->zl_header;
+
+	if (BP_IS_HOLE(&zh->zh_log)) {
+		zfs_dbgmsg(" zilog=%p is a hole\n", (void*)zilog);
+		return;
+	}
+	zfs_dbgmsg("\n    zilog(%p): on-disk log record sequence number %llu, last committed on-disk lr seq %llu, txg of last zil_destroy() %llu, current replay seq number %llu\n",
+		(void*) zilog,
+	    (u_longlong_t)zilog->zl_lr_seq,
+	    (u_longlong_t)zilog->zl_commit_lr_seq,
+	    (u_longlong_t)zilog->zl_destroy_txg, (u_longlong_t)zilog->zl_replaying_seq);
+	zfs_dbgmsg("\n    ZIL header (%p): claim_txg %llu, "
+	    "claim_blk_seq %llu, claim_lr_seq %llu", (void*)(zh),
+	    (u_longlong_t)zh->zh_claim_txg,
+	    (u_longlong_t)zh->zh_claim_blk_seq,
+	    (u_longlong_t)zh->zh_claim_lr_seq);
+	zfs_dbgmsg(" replay_seq %llu, flags 0x%llx\n",
+	    (u_longlong_t)zh->zh_replay_seq, (u_longlong_t)zh->zh_flags);
+}
+
+__attribute__((unused)) static void zfs_dbgmsg_log_block(zilog_t *zilog)
+{
+	
+	const zil_header_t *zh = zilog->zl_header;
+
+	if (BP_IS_HOLE(&zh->zh_log)) {
+		zfs_dbgmsg(" zilog=%p is a hole zh->zh_log\n", (void*)zilog);
+		//return;
+	}
+	zfs_dbgmsg("\n    zilog=%p: on-disk log record sequence number %llu, last committed on-disk lr seq %llu, txg of last zil_destroy() %llu, current replay seq number %llu\n",
+		(void*) zilog,
+	    (u_longlong_t)zilog->zl_lr_seq,
+	    (u_longlong_t)zilog->zl_commit_lr_seq,
+	    (u_longlong_t)zilog->zl_destroy_txg, (u_longlong_t)zilog->zl_replaying_seq);
+	zfs_dbgmsg("\n    ZIL header=%p: claim_txg %llu, "
+	    "claim_blk_seq %llu, claim_lr_seq %llu", (void*)(zh),
+	    (u_longlong_t)zh->zh_claim_txg,
+	    (u_longlong_t)zh->zh_claim_blk_seq,
+	    (u_longlong_t)zh->zh_claim_lr_seq);
+	zfs_dbgmsg(" replay_seq %llu, flags 0x%llx\n",
+	    (u_longlong_t)zh->zh_replay_seq, (u_longlong_t)zh->zh_flags);
+	#if 0
+	zil_parse(zilog, print_log_block, print_log_record, NULL,
+		    zh->zh_claim_txg, B_FALSE);
+	#endif
+}
+
 
 /*
  * See zil.h for more information about these fields.
@@ -100,9 +284,6 @@ static uint_t zfs_commit_timeout_pct = 10;
 static zil_kstat_values_t zil_stats = {
 	{ "zil_commit_count",			KSTAT_DATA_UINT64 },
 	{ "zil_commit_writer_count",		KSTAT_DATA_UINT64 },
-	{ "zil_commit_error_count",		KSTAT_DATA_UINT64 },
-	{ "zil_commit_stall_count",		KSTAT_DATA_UINT64 },
-	{ "zil_commit_suspend_count",		KSTAT_DATA_UINT64 },
 	{ "zil_itx_count",			KSTAT_DATA_UINT64 },
 	{ "zil_itx_indirect_count",		KSTAT_DATA_UINT64 },
 	{ "zil_itx_indirect_bytes",		KSTAT_DATA_UINT64 },
@@ -129,9 +310,10 @@ static kstat_t *zil_kstats_global;
 int zil_replay_disable = 0;
 
 /*
- * Disable the flush commands that are normally sent to the disk(s) by the ZIL
- * after an LWB write has completed. Setting this will cause ZIL corruption on
- * power loss if a volatile out-of-order write cache is enabled.
+ * Disable the DKIOCFLUSHWRITECACHE commands that are normally sent to
+ * the disk(s) by the ZIL after an LWB write has completed. Setting this
+ * will cause ZIL corruption on power loss if a volatile out-of-order
+ * write cache is enabled.
  */
 static int zil_nocacheflush = 0;
 
@@ -239,6 +421,16 @@ zil_kstats_global_update(kstat_t *ksp, int rw)
 	return (0);
 }
 
+//forward declaration
+static int zil_clear_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
+    uint64_t first_txg);
+static int zil_incr_blks(zilog_t *zilog, const blkptr_t *bp, void *arg, uint64_t claim_txg);
+static int
+zil_free_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
+    uint64_t claim_txg);
+static int
+zil_claim_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
+	uint64_t first_txg);
 /*
  * Read a log block and make sure it's valid.
  */
@@ -262,9 +454,11 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 
 	SET_BOOKMARK(&zb, bp->blk_cksum.zc_word[ZIL_ZC_OBJSET],
 	    ZB_ZIL_OBJECT, ZB_ZIL_LEVEL, bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
-
+	
 	error = arc_read(NULL, zilog->zl_spa, bp, arc_getbuf_func,
 	    abuf, ZIO_PRIORITY_SYNC_READ, zio_flags, &aflags, &zb);
+
+	zfs_dbgmsg(" error=%d\n", error);
 
 	if (error == 0) {
 		zio_cksum_t cksum = bp->blk_cksum;
@@ -281,13 +475,39 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 
 		uint64_t size = BP_GET_LSIZE(bp);
 		if (BP_GET_CHECKSUM(bp) == ZIO_CHECKSUM_ZILOG2) {
+			
+			//TODO calculate the expected ezk
+			/*
+			
+			fletcher_4_native(buf, arc_size, NULL, &zc_ref);
+			*/
+			//zio_cksum_t zc_ref;
+			// void* buf = (*abuf)->b_data;
+			//uint64_t arc_size = arc_buf_size(*abuf);
+
 			zil_chain_t *zilc = (*abuf)->b_data;
 			char *lr = (char *)(zilc + 1);
 
+			zio_eck_t eck = zilc->zc_eck;
+			zio_cksum_t bp_seqno = zilc->zc_next_blk.blk_cksum;
+			if (memcmp(bp_seqno.zc_word, cksum.zc_word, sizeof(cksum.zc_word)) != 0) {
+				zfs_dbgmsg( " error because there is seqno missmatch \n");
+			}
+
+		
+			//zfs_dbgmsg(" size=%llu\tarc_size=%llu\n",
+			//	(u_longlong_t)size, (u_longlong_t) arc_size);
+			zfs_dbgmsg(" blk_cksum=%016llx:%016llx:%016llx:%016llx\tezk=%016llx:%016llx:%016llx:%016llx\n", \
+				(u_longlong_t) bp_seqno.zc_word[0], (u_longlong_t) bp_seqno.zc_word[1], \
+				(u_longlong_t) bp_seqno.zc_word[2], ((u_longlong_t) bp_seqno.zc_word[3]-1), \
+				(u_longlong_t) eck.zec_cksum.zc_word[0], (u_longlong_t) eck.zec_cksum.zc_word[1], \
+				(u_longlong_t) eck.zec_cksum.zc_word[2], (u_longlong_t) eck.zec_cksum.zc_word[3]);
+		
 			if (memcmp(&cksum, &zilc->zc_next_blk.blk_cksum,
 			    sizeof (cksum)) ||
 			    zilc->zc_nused < sizeof (*zilc) ||
 			    zilc->zc_nused > size) {
+				zfs_dbgmsg(" checksum error\n");
 				error = SET_ERROR(ECKSUM);
 			} else {
 				*begin = lr;
@@ -302,6 +522,7 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 			    sizeof (cksum)) ||
 			    (zilc->zc_nused > (size - sizeof (*zilc)))) {
 				error = SET_ERROR(ECKSUM);
+				zfs_dbgmsg(" checksum error\n");
 			} else {
 				*begin = lr;
 				*end = lr + zilc->zc_nused;
@@ -312,6 +533,11 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 
 	return (error);
 }
+
+// forward declaration
+static int
+zil_replay_log_record(zilog_t *zilog, const lr_t *lr, void *zra,
+    uint64_t claim_txg);
 
 /*
  * Read a TX_WRITE log data block.
@@ -364,9 +590,6 @@ zil_sums_init(zil_sums_t *zs)
 {
 	wmsum_init(&zs->zil_commit_count, 0);
 	wmsum_init(&zs->zil_commit_writer_count, 0);
-	wmsum_init(&zs->zil_commit_error_count, 0);
-	wmsum_init(&zs->zil_commit_stall_count, 0);
-	wmsum_init(&zs->zil_commit_suspend_count, 0);
 	wmsum_init(&zs->zil_itx_count, 0);
 	wmsum_init(&zs->zil_itx_indirect_count, 0);
 	wmsum_init(&zs->zil_itx_indirect_bytes, 0);
@@ -389,9 +612,6 @@ zil_sums_fini(zil_sums_t *zs)
 {
 	wmsum_fini(&zs->zil_commit_count);
 	wmsum_fini(&zs->zil_commit_writer_count);
-	wmsum_fini(&zs->zil_commit_error_count);
-	wmsum_fini(&zs->zil_commit_stall_count);
-	wmsum_fini(&zs->zil_commit_suspend_count);
 	wmsum_fini(&zs->zil_itx_count);
 	wmsum_fini(&zs->zil_itx_indirect_count);
 	wmsum_fini(&zs->zil_itx_indirect_bytes);
@@ -416,12 +636,6 @@ zil_kstat_values_update(zil_kstat_values_t *zs, zil_sums_t *zil_sums)
 	    wmsum_value(&zil_sums->zil_commit_count);
 	zs->zil_commit_writer_count.value.ui64 =
 	    wmsum_value(&zil_sums->zil_commit_writer_count);
-	zs->zil_commit_error_count.value.ui64 =
-	    wmsum_value(&zil_sums->zil_commit_error_count);
-	zs->zil_commit_stall_count.value.ui64 =
-	    wmsum_value(&zil_sums->zil_commit_stall_count);
-	zs->zil_commit_suspend_count.value.ui64 =
-	    wmsum_value(&zil_sums->zil_commit_suspend_count);
 	zs->zil_itx_count.value.ui64 =
 	    wmsum_value(&zil_sums->zil_itx_count);
 	zs->zil_itx_indirect_count.value.ui64 =
@@ -454,6 +668,24 @@ zil_kstat_values_update(zil_kstat_values_t *zs, zil_sums_t *zil_sums)
 	    wmsum_value(&zil_sums->zil_itx_metaslab_slog_alloc);
 }
 
+static const char* print_callback_for_blk_in_zil_parse(zil_parse_blk_func_t *parse_blk_func) {
+	if (parse_blk_func == zil_clear_log_block) {
+		return "zil_clear_log_block\n";
+	}
+	else if (parse_blk_func == zil_incr_blks) {
+		return "zil_incr_blks\n";
+	}
+	else if (parse_blk_func == zil_free_log_block) {
+		return "zil_free_log_block\n";
+	}
+	else if (parse_blk_func == zil_claim_log_block) {
+		return "zil_claim_log_block\n";
+	}
+	else {
+		return "something else ...\n";
+	}
+}
+
 /*
  * Parse the intent log, and call parse_func for each valid record within.
  */
@@ -462,6 +694,8 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
     zil_parse_lr_func_t *parse_lr_func, void *arg, uint64_t txg,
     boolean_t decrypt)
 {
+	
+
 	const zil_header_t *zh = zilog->zl_header;
 	boolean_t claimed = !!zh->zh_claim_txg;
 	uint64_t claim_blk_seq = claimed ? zh->zh_claim_blk_seq : UINT64_MAX;
@@ -472,7 +706,13 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	uint64_t lr_count = 0;
 	blkptr_t blk, next_blk = {{{{0}}}};
 	int error = 0;
-
+	
+	char name[ZFS_MAX_DATASET_NAME_LEN];
+	dsl_dataset_name(zilog->zl_os->os_dsl_dataset, name);
+	zfs_dbgmsg(" name=%s\n", name);
+	const char* func_name = print_callback_for_blk_in_zil_parse(parse_blk_func);
+	zfs_dbgmsg(" dataset name=%s, parse_blk_func name=%s\n", name, func_name);
+	
 	/*
 	 * Old logs didn't record the maximum zh_claim_lr_seq.
 	 */
@@ -489,12 +729,45 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	 * number greater than the highest claimed sequence number.
 	 */
 	zil_bp_tree_init(zilog);
-
+	zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
+	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	starting_blk_cmt = get_zil_header_cmt_for_dsl(&ccf_zil_commitments);
+	final_blk_cmt = get_zil_tail_cmt_for_dsl(&ccf_zil_commitments);
+	//dump_zil_commitment2(&zil_tail_commitment);
+	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
+	int first_block = 1;
+	
+	zfs_dbgmsg(" remount=%d\n", remount);
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
 		uint64_t blk_seq = blk.blk_cksum.zc_word[ZIL_ZC_SEQ];
 		int reclen;
-		char *lrp, *end;
+		char *lrp = NULL, *end = NULL;
 		arc_buf_t *abuf = NULL;
+		if (first_block && remount) {
+			first_block = 0;
+			// todo: these are supposed to be initialized from CCF
+			// init(&recovery_map);
+			// zc_eck first_val =  get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
+			// zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
+			// final_blk_cmt->blk_digest = tail_hash;
+			// append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
+			
+			// @dimitra todo: compare commitments at the calculation (zio_compute.c)
+			if (starting_blk_cmt != NULL) {
+				if (memcmp(blk.blk_cksum.zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
+					zfs_dbgmsg(" zil headers match\n");
+				}
+				else {
+					zfs_dbgmsg(" Error, zil headers *not* match ..\n\
+						blk.blk_cksum.zc_word=%016llx:%016llx:%016llx:%016llx, starting_blk_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n",\
+						(u_longlong_t)blk.blk_cksum.zc_word[0], (u_longlong_t)blk.blk_cksum.zc_word[1], \
+						(u_longlong_t)blk.blk_cksum.zc_word[2], (u_longlong_t)blk.blk_cksum.zc_word[3], \
+						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[0], (u_longlong_t)starting_blk_cmt->blk_num.zc_word[1], \
+						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[2], (u_longlong_t)starting_blk_cmt->blk_num.zc_word[3]);
+				}
+			}
+		}
 
 		if (blk_seq > claim_blk_seq)
 			break;
@@ -509,8 +782,24 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 		if (max_lr_seq == claim_lr_seq && max_blk_seq == claim_blk_seq)
 			break;
 
+		
+		
+		
 		error = zil_read_log_block(zilog, decrypt, &blk, &next_blk,
 		    &lrp, &end, &abuf);
+
+		if (remount) {
+			if (final_blk_cmt != NULL) {
+				if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
+					zfs_dbgmsg(" this is the tail, error should be 0 (error=%d)..\n", error);
+				}
+				else if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)-sizeof(blk.blk_cksum.zc_word[ZIL_ZC_SEQ])) == 0) {
+					if (blk.blk_cksum.zc_word[ZIL_ZC_SEQ] > final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ])
+						zfs_dbgmsg(" This block is past tail error should be > 0 (error=%d)\n", error);
+				}
+			}
+		}
+
 		if (error != 0) {
 			if (abuf)
 				arc_buf_destroy(abuf, &abuf);
@@ -525,29 +814,13 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			}
 			break;
 		}
+		
 
 		for (; lrp < end; lrp += reclen) {
 			lr_t *lr = (lr_t *)lrp;
-
-			/*
-			 * Are the remaining bytes large enough to hold an
-			 * log record?
-			 */
-			if ((char *)(lr + 1) > end) {
-				cmn_err(CE_WARN, "zil_parse: lr_t overrun");
-				error = SET_ERROR(ECKSUM);
-				arc_buf_destroy(abuf, &abuf);
-				goto done;
-			}
 			reclen = lr->lrc_reclen;
-			if (reclen < sizeof (lr_t) || reclen > end - lrp) {
-				cmn_err(CE_WARN,
-				    "zil_parse: lr_t has an invalid reclen");
-				error = SET_ERROR(ECKSUM);
-				arc_buf_destroy(abuf, &abuf);
-				goto done;
-			}
-
+			ASSERT3U(reclen, >=, sizeof (lr_t));
+			ASSERT3U(reclen, <=, end - lrp);
 			if (lr->lrc_seq > claim_lr_seq) {
 				arc_buf_destroy(abuf, &abuf);
 				goto done;
@@ -570,11 +843,14 @@ done:
 	zilog->zl_parse_lr_seq = max_lr_seq;
 	zilog->zl_parse_blk_count = blk_count;
 	zilog->zl_parse_lr_count = lr_count;
-
 	zil_bp_tree_fini(zilog);
-
+	starting_blk_cmt = NULL;
+	final_blk_cmt = NULL;
 	return (error);
 }
+
+
+
 
 static int
 zil_clear_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
@@ -582,14 +858,14 @@ zil_clear_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
 {
 	(void) tx;
 	ASSERT(!BP_IS_HOLE(bp));
-
+	zfs_dbgmsg(" bp->blk_birth=%llu\tfirst_txg=%llu\n", (u_longlong_t)bp->blk_birth, (u_longlong_t)first_txg);
 	/*
 	 * As we call this function from the context of a rewind to a
 	 * checkpoint, each ZIL block whose txg is later than the txg
 	 * that we rewind to is invalid. Thus, we return -1 so
 	 * zil_parse() doesn't attempt to read it.
 	 */
-	if (BP_GET_LOGICAL_BIRTH(bp) >= first_txg)
+	if (bp->blk_birth >= first_txg)
 		return (-1);
 
 	if (zil_bp_tree_add(zilog, bp) != 0)
@@ -615,7 +891,7 @@ zil_claim_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
 	 * Claim log block if not already committed and not already claimed.
 	 * If tx == NULL, just verify that the block is claimable.
 	 */
-	if (BP_IS_HOLE(bp) || BP_GET_LOGICAL_BIRTH(bp) < first_txg ||
+	if (BP_IS_HOLE(bp) || bp->blk_birth < first_txg ||
 	    zil_bp_tree_add(zilog, bp) != 0)
 		return (0);
 
@@ -627,6 +903,7 @@ zil_claim_log_block(zilog_t *zilog, const blkptr_t *bp, void *tx,
 static int
 zil_claim_write(zilog_t *zilog, const lr_t *lrc, void *tx, uint64_t first_txg)
 {
+	zfs_dbgmsg("\n");
 	lr_write_t *lr = (lr_write_t *)lrc;
 	int error;
 
@@ -640,7 +917,7 @@ zil_claim_write(zilog_t *zilog, const lr_t *lrc, void *tx, uint64_t first_txg)
 	 * waited for all writes to be stable first), so it is semantically
 	 * correct to declare this the end of the log.
 	 */
-	if (BP_GET_LOGICAL_BIRTH(&lr->lr_blkptr) >= first_txg) {
+	if (lr->lr_blkptr.blk_birth >= first_txg) {
 		error = zil_read_log_data(zilog, lr, NULL);
 		if (error != 0)
 			return (error);
@@ -687,7 +964,7 @@ zil_claim_clone_range(zilog_t *zilog, const lr_t *lrc, void *tx,
 		 * just in case lets be safe and just stop here now instead of
 		 * corrupting the pool.
 		 */
-		if (BP_GET_BIRTH(bp) >= first_txg)
+		if (BP_PHYSICAL_BIRTH(bp) >= first_txg)
 			return (SET_ERROR(ENOENT));
 
 		/*
@@ -742,8 +1019,8 @@ zil_free_write(zilog_t *zilog, const lr_t *lrc, void *tx, uint64_t claim_txg)
 	/*
 	 * If we previously claimed it, we need to free it.
 	 */
-	if (BP_GET_LOGICAL_BIRTH(bp) >= claim_txg &&
-	    zil_bp_tree_add(zilog, bp) == 0 && !BP_IS_HOLE(bp)) {
+	if (bp->blk_birth >= claim_txg && zil_bp_tree_add(zilog, bp) == 0 &&
+	    !BP_IS_HOLE(bp)) {
 		zio_free(zilog->zl_spa, dmu_tx_get_txg(tx), bp);
 	}
 
@@ -834,9 +1111,11 @@ zil_alloc_lwb(zilog_t *zilog, int sz, blkptr_t *bp, boolean_t slog,
 	if (lwb->lwb_slim) {
 		lwb->lwb_nmax = sz;
 		lwb->lwb_nused = lwb->lwb_nfilled = sizeof (zil_chain_t);
+		lwb->lwb_nfilled_parsing = sizeof(zil_chain_t);
 	} else {
 		lwb->lwb_nmax = sz - sizeof (zil_chain_t);
 		lwb->lwb_nused = lwb->lwb_nfilled = 0;
+		lwb->lwb_nfilled_parsing = 0;
 	}
 	lwb->lwb_sz = sz;
 	lwb->lwb_state = state;
@@ -848,7 +1127,7 @@ zil_alloc_lwb(zilog_t *zilog, int sz, blkptr_t *bp, boolean_t slog,
 	lwb->lwb_issued_txg = 0;
 	lwb->lwb_alloc_txg = txg;
 	lwb->lwb_max_txg = 0;
-
+	zfs_dbgmsg(" lwb=%p, lwb->lwb_alloc_txg=%llu\n", (void*)lwb, (u_longlong_t)lwb->lwb_alloc_txg);
 	mutex_enter(&zilog->zl_lock);
 	list_insert_tail(&zilog->zl_lwb_list, lwb);
 	if (state != LWB_STATE_NEW)
@@ -861,6 +1140,8 @@ zil_alloc_lwb(zilog_t *zilog, int sz, blkptr_t *bp, boolean_t slog,
 static void
 zil_free_lwb(zilog_t *zilog, lwb_t *lwb)
 {
+	zfs_dbgmsg(" zilog->zl_header->zh_claim_txg=%llu\tzilog->zl_header->zh_claim_lr_seq=%llu\tzilog->zl_header->zh_claim_blk_seq=%llu\tlwb->lwb_issued_txg=%llu\tlwb->lwb_alloc_txg=%llu\t", (u_longlong_t)zilog->zl_header->zh_claim_txg, (u_longlong_t)zilog->zl_header->zh_claim_lr_seq, (u_longlong_t)zilog->zl_header->zh_claim_blk_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg);
+
 	ASSERT(MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(lwb->lwb_state == LWB_STATE_NEW ||
 	    lwb->lwb_state == LWB_STATE_FLUSH_DONE);
@@ -949,6 +1230,8 @@ zilog_is_dirty(zilog_t *zilog)
 static void
 zil_commit_activate_saxattr_feature(zilog_t *zilog)
 {
+	zfs_dbgmsg(" zilog=%p\n", (void*)zilog);
+
 	dsl_dataset_t *ds = dmu_objset_ds(zilog->zl_os);
 	uint64_t txg = 0;
 	dmu_tx_t *tx = NULL;
@@ -957,7 +1240,7 @@ zil_commit_activate_saxattr_feature(zilog_t *zilog)
 	    dmu_objset_type(zilog->zl_os) != DMU_OST_ZVOL &&
 	    !dsl_dataset_feature_is_active(ds, SPA_FEATURE_ZILSAXATTR)) {
 		tx = dmu_tx_create(zilog->zl_os);
-		VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT));
+		VERIFY0(dmu_tx_assign(tx, TXG_WAIT));
 		dsl_dataset_dirty(ds, tx);
 		txg = dmu_tx_get_txg(tx);
 
@@ -984,7 +1267,7 @@ zil_create(zilog_t *zilog)
 	int error = 0;
 	boolean_t slog = FALSE;
 	dsl_dataset_t *ds = dmu_objset_ds(zilog->zl_os);
-
+	
 
 	/*
 	 * Wait for any previous destroy to complete.
@@ -995,7 +1278,7 @@ zil_create(zilog_t *zilog)
 	ASSERT(zh->zh_replay_seq == 0);
 
 	blk = zh->zh_log;
-
+	zfs_dbgmsg(" zilog=%p zilog->zl_destroy_txg=%llu\n", (void*)zilog, (u_longlong_t)zilog->zl_destroy_txg);
 	/*
 	 * Allocate an initial log block if:
 	 *    - there isn't one already
@@ -1003,7 +1286,7 @@ zil_create(zilog_t *zilog)
 	 */
 	if (BP_IS_HOLE(&blk) || BP_SHOULD_BYTESWAP(&blk)) {
 		tx = dmu_tx_create(zilog->zl_os);
-		VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT));
+		VERIFY0(dmu_tx_assign(tx, TXG_WAIT));
 		dsl_dataset_dirty(dmu_objset_ds(zilog->zl_os), tx);
 		txg = dmu_tx_get_txg(tx);
 
@@ -1093,7 +1376,7 @@ zil_destroy(zilog_t *zilog, boolean_t keep_first)
 		return (B_FALSE);
 
 	tx = dmu_tx_create(zilog->zl_os);
-	VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT));
+	VERIFY0(dmu_tx_assign(tx, TXG_WAIT));
 	dsl_dataset_dirty(dmu_objset_ds(zilog->zl_os), tx);
 	txg = dmu_tx_get_txg(tx);
 
@@ -1101,6 +1384,7 @@ zil_destroy(zilog_t *zilog, boolean_t keep_first)
 
 	ASSERT3U(zilog->zl_destroy_txg, <, txg);
 	zilog->zl_destroy_txg = txg;
+	zfs_dbgmsg(" zilog->zl_destroy_txg=%llu\n", (u_longlong_t)zilog->zl_destroy_txg);
 	zilog->zl_keep_first = keep_first;
 
 	if (!list_is_empty(&zilog->zl_lwb_list)) {
@@ -1140,7 +1424,8 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	zil_header_t *zh;
 	objset_t *os;
 	int error;
-
+	remount = 1;
+	zfs_dbgmsg("\n");
 	error = dmu_objset_own_obj(dp, ds->ds_object,
 	    DMU_OST_ANY, B_FALSE, B_FALSE, FTAG, &os);
 	if (error != 0) {
@@ -1195,6 +1480,9 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 			(void) zil_parse(zilog, zil_clear_log_block,
 			    zil_noop_log_record, tx, first_txg, B_FALSE);
 		}
+		else {
+			zfs_dbgmsg(" BP_IS_HOLE\n");
+		}
 		BP_ZERO(&zh->zh_log);
 		if (os->os_encrypted)
 			os->os_next_write_raw[tx->tx_txg & TXG_MASK] = B_TRUE;
@@ -1233,6 +1521,8 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 
 	ASSERT3U(first_txg, ==, (spa_last_synced_txg(zilog->zl_spa) + 1));
 	dmu_objset_disown(os, B_FALSE, FTAG);
+	remount = 0;
+	cleanup_global_variable(&recovery_map);
 	return (0);
 }
 
@@ -1249,7 +1539,9 @@ zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	objset_t *os;
 	blkptr_t *bp;
 	int error;
+	remount = 1;
 
+	zfs_dbgmsg("\n");
 	ASSERT(tx == NULL);
 
 	error = dmu_objset_from_ds(ds, &os);
@@ -1305,7 +1597,7 @@ zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	error = zil_parse(zilog, zil_claim_log_block, zil_claim_log_record, tx,
 	    zilog->zl_header->zh_claim_txg ? -1ULL :
 	    spa_min_claim_txg(os->os_spa), B_FALSE);
-
+	remount = 0;
 	return ((error == ECKSUM || error == ENOENT) ? 0 : error);
 }
 
@@ -1336,6 +1628,8 @@ zil_commit_waiter_skip(zil_commit_waiter_t *zcw)
 static void
 zil_commit_waiter_link_lwb(zil_commit_waiter_t *zcw, lwb_t *lwb)
 {
+  zfs_dbgmsg("\n");
+
 	/*
 	 * The lwb_waiters field of the lwb is protected by the zilog's
 	 * zl_issuer_lock while the lwb is open and zl_lock otherwise.
@@ -1363,6 +1657,7 @@ zil_commit_waiter_link_lwb(zil_commit_waiter_t *zcw, lwb_t *lwb)
 static void
 zil_commit_waiter_link_nolwb(zil_commit_waiter_t *zcw, list_t *nolwb)
 {
+  	zfs_dbgmsg("\n");
 	ASSERT(!list_link_active(&zcw->zcw_node));
 	list_insert_tail(nolwb, zcw);
 	ASSERT3P(zcw->zcw_lwb, ==, NULL);
@@ -1376,6 +1671,8 @@ zil_lwb_add_block(lwb_t *lwb, const blkptr_t *bp)
 	zil_vdev_node_t *zv, zvsearch;
 	int ndvas = BP_GET_NDVAS(bp);
 	int i;
+	
+ 	zfs_dbgmsg(" lwb=%p, (u_longlong_t)lwb->lwb_alloc_txg=%llu (u_longlong_t)bp->blk_birth=%llu\n", (void*)lwb, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)bp->blk_birth);
 
 	ASSERT3S(lwb->lwb_state, !=, LWB_STATE_WRITE_DONE);
 	ASSERT3S(lwb->lwb_state, !=, LWB_STATE_FLUSH_DONE);
@@ -1402,6 +1699,7 @@ zil_lwb_flush_defer(lwb_t *lwb, lwb_t *nlwb)
 	avl_tree_t *dst = &nlwb->lwb_vdev_tree;
 	void *cookie = NULL;
 	zil_vdev_node_t *zv;
+  	zfs_dbgmsg("\n");
 
 	ASSERT3S(lwb->lwb_state, ==, LWB_STATE_WRITE_DONE);
 	ASSERT3S(nlwb->lwb_state, !=, LWB_STATE_WRITE_DONE);
@@ -1434,30 +1732,35 @@ zil_lwb_flush_defer(lwb_t *lwb, lwb_t *nlwb)
 void
 zil_lwb_add_txg(lwb_t *lwb, uint64_t txg)
 {
+  	zfs_dbgmsg("\n");
+
 	lwb->lwb_max_txg = MAX(lwb->lwb_max_txg, txg);
 }
 
 /*
- * This function is a called after all vdevs associated with a given lwb write
- * have completed their flush command; or as soon as the lwb write completes,
- * if "zil_nocacheflush" is set. Further, all "previous" lwb's will have
- * completed before this function is called; i.e. this function is called for
- * all previous lwbs before it's called for "this" lwb (enforced via zio the
- * dependencies configured in zil_lwb_set_zio_dependency()).
+ * This function is a called after all vdevs associated with a given lwb
+ * write have completed their DKIOCFLUSHWRITECACHE command; or as soon
+ * as the lwb write completes, if "zil_nocacheflush" is set. Further,
+ * all "previous" lwb's will have completed before this function is
+ * called; i.e. this function is called for all previous lwbs before
+ * it's called for "this" lwb (enforced via zio the dependencies
+ * configured in zil_lwb_set_zio_dependency()).
  *
- * The intention is for this function to be called as soon as the contents of
- * an lwb are considered "stable" on disk, and will survive any sudden loss of
- * power. At this point, any threads waiting for the lwb to reach this state
- * are signalled, and the "waiter" structures are marked "done".
+ * The intention is for this function to be called as soon as the
+ * contents of an lwb are considered "stable" on disk, and will survive
+ * any sudden loss of power. At this point, any threads waiting for the
+ * lwb to reach this state are signalled, and the "waiter" structures
+ * are marked "done".
  */
 static void
 zil_lwb_flush_vdevs_done(zio_t *zio)
 {
+  	
 	lwb_t *lwb = zio->io_private;
 	zilog_t *zilog = lwb->lwb_zilog;
 	zil_commit_waiter_t *zcw;
 	itx_t *itx;
-
+	
 	spa_config_exit(zilog->zl_spa, SCL_STATE, lwb);
 
 	hrtime_t t = gethrtime() - lwb->lwb_issued_timestamp;
@@ -1470,6 +1773,9 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 	ASSERT3S(lwb->lwb_state, ==, LWB_STATE_WRITE_DONE);
 	lwb->lwb_state = LWB_STATE_FLUSH_DONE;
+	zfs_dbgmsg(" lwb=%p (lwb_state=LWB_STATE_FLUSH_DONE), lwb->lwb_issued_txg=%llu, \
+		lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)lwb, (u_longlong_t)lwb->lwb_issued_txg, \
+		(u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
 
 	if (zilog->zl_last_lwb_opened == lwb) {
 		/*
@@ -1481,6 +1787,40 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		zilog->zl_commit_lr_seq = zilog->zl_lr_seq;
 	}
 
+	zfs_dbgmsg(" lwb=%p, zilog->zl_commit_lr_seq=%llu, zilog->zl_lr_seq=%llu, lwb->lwb_issued_txg=%llu, \
+		lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*) lwb, (u_longlong_t)zilog->zl_commit_lr_seq, \
+		(u_longlong_t)zilog->zl_lr_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, \
+		(u_longlong_t)lwb->lwb_max_txg);
+
+	print_blk(&(lwb->lwb_blk));
+	zfs_dbgmsg(" PRINT TAIL COMMITMENT\n");
+	char name[ZFS_MAX_DATASET_NAME_LEN];
+	objset_t* os = 	zilog->zl_os;
+	dsl_dataset_name(os->os_dsl_dataset, name);
+	zfs_dbgmsg(" name=%s\t lwb_blk->cksum_seq_no=%llu in txg_sync=%llu w/ DVA=<%llu:%llx:%llx>\n", name, \
+		(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)lwb->lwb_issued_txg, \
+		(u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva), \
+		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
+	
+
+	zil_commitment_t* tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
+	//dump_zil_commitment2(tail_commitment);
+	zil_tail_commitment = *tail_commitment;
+	//free_node(tail_commitment, sizeof(zil_commitment_t));
+	zfs_dbgmsg(" **** tail_commitment start ****\n");
+	// dump_zil_commitment2(&zil_tail_commitment);
+	// append_cmts(ccf_zil_tail_commitments, tail_commitment);
+	ccf_state_append(&ccf_zil_commitments, tail_commitment);
+	ccf_state_get(&ccf_zil_commitments);
+	// ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
+	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	zfs_dbgmsg(" **** tail_commitment end ****\n");
+	
+	
+	// print_log_block (zilog, zio->io_bp, NULL, 0);
+	
+	// zfs_dbgmsg_log_block(zilog);
 	while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)
 		zil_itx_destroy(itx);
 
@@ -1533,13 +1873,15 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 static void
 zil_lwb_flush_wait_all(zilog_t *zilog, uint64_t txg)
 {
+  	zfs_dbgmsg(" zilog=%p, txg=%llu\n", (void*)zilog, (u_longlong_t)txg);
+
 	ASSERT3U(txg, ==, spa_syncing_txg(zilog->zl_spa));
 
 	mutex_enter(&zilog->zl_lwb_io_lock);
 	while (zilog->zl_lwb_inflight[txg & TXG_MASK] > 0)
 		cv_wait(&zilog->zl_lwb_io_cv, &zilog->zl_lwb_io_lock);
 	mutex_exit(&zilog->zl_lwb_io_lock);
-
+	// zfs_dbgmsg_log_block(zilog);
 #ifdef ZFS_DEBUG
 	mutex_enter(&zilog->zl_lock);
 	mutex_enter(&zilog->zl_lwb_io_lock);
@@ -1562,20 +1904,22 @@ zil_lwb_flush_wait_all(zilog_t *zilog, uint64_t txg)
 }
 
 /*
- * This is called when an lwb's write zio completes. The callback's purpose is
- * to issue the flush commands for the vdevs in the lwb's lwb_vdev_tree. The
- * tree will contain the vdevs involved in writing out this specific lwb's
- * data, and in the case that cache flushes have been deferred, vdevs involved
- * in writing the data for previous lwbs. The writes corresponding to all the
- * vdevs in the lwb_vdev_tree will have completed by the time this is called,
- * due to the zio dependencies configured in zil_lwb_set_zio_dependency(),
- * which takes deferred flushes into account. The lwb will be "done" once
- * zil_lwb_flush_vdevs_done() is called, which occurs in the zio completion
- * callback for the lwb's root zio.
+ * This is called when an lwb's write zio completes. The callback's
+ * purpose is to issue the DKIOCFLUSHWRITECACHE commands for the vdevs
+ * in the lwb's lwb_vdev_tree. The tree will contain the vdevs involved
+ * in writing out this specific lwb's data, and in the case that cache
+ * flushes have been deferred, vdevs involved in writing the data for
+ * previous lwbs. The writes corresponding to all the vdevs in the
+ * lwb_vdev_tree will have completed by the time this is called, due to
+ * the zio dependencies configured in zil_lwb_set_zio_dependency(),
+ * which takes deferred flushes into account. The lwb will be "done"
+ * once zil_lwb_flush_vdevs_done() is called, which occurs in the zio
+ * completion callback for the lwb's root zio.
  */
 static void
 zil_lwb_write_done(zio_t *zio)
 {
+
 	lwb_t *lwb = zio->io_private;
 	spa_t *spa = zio->io_spa;
 	zilog_t *zilog = lwb->lwb_zilog;
@@ -1583,9 +1927,28 @@ zil_lwb_write_done(zio_t *zio)
 	void *cookie = NULL;
 	zil_vdev_node_t *zv;
 	lwb_t *nlwb;
-
+	/*
+	 	uint64_t	lwb_issued_txg;	// the txg when the write is issued 
+    	uint64_t	lwb_alloc_txg;	// the txg when lwb_blk is allocated 
+    	uint64_t	lwb_max_txg;	// highest txg in this lwb 
+	*/
+	zfs_dbgmsg(" zilog=%p, lwb=%p, lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, \
+		lwb->lwb_max_txg=%llu\n", \
+		(void*)zilog, (void*) lwb, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, \
+		(u_longlong_t)lwb->lwb_max_txg);
+	// zfs_dbgmsg(" lwb=%p that has finished lwb->lwb_nmax=%d, lwb->lwb_nused=%d, lwb->lwb_nfilled=%d, lwb->lwb_sz=%d\n", (void*) lwb, lwb->lwb_nmax, lwb->lwb_nused, lwb->lwb_nfilled, lwb->lwb_sz);
+	// print_log_block (zilog, &(lwb->lwb_blk), NULL, 0);
+	// zfs_dbgmsg(" zilog=%p, lwb=%p, zilog->zl_commit_lr_seq=%llu, zilog->zl_lr_seq=%llu, lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)zilog, (void*) lwb, (u_longlong_t)zilog->zl_commit_lr_seq, (u_longlong_t)zilog->zl_lr_seq,  (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+	// print_zilc_zc_eck((zil_chain_t *)lwb->lwb_buf);
+	/*
+	for (int i = 0ULL; i < lwb->lwb_nfilled; i++) {
+		zfs_dbgmsg("%c", lwb->lwb_buf[i]);
+	}	
+	zfs_dbgmsg("\n");
+	*/
 	ASSERT3S(spa_config_held(spa, SCL_STATE, RW_READER), !=, 0);
 
+	// print_blk(&(lwb->lwb_blk));
 	abd_free(zio->io_abd);
 	zio_buf_free(lwb->lwb_buf, lwb->lwb_sz);
 	lwb->lwb_buf = NULL;
@@ -1595,7 +1958,7 @@ zil_lwb_write_done(zio_t *zio)
 	lwb->lwb_state = LWB_STATE_WRITE_DONE;
 	lwb->lwb_child_zio = NULL;
 	lwb->lwb_write_zio = NULL;
-
+	// zfs_dbgmsg_log_block(zilog);
 	/*
 	 * If nlwb is not yet issued, zil_lwb_set_zio_dependency() is not
 	 * called for it yet, and when it will be, it won't be able to make
@@ -1630,18 +1993,19 @@ zil_lwb_write_done(zio_t *zio)
 	}
 
 	/*
-	 * If this lwb does not have any threads waiting for it to complete, we
-	 * want to defer issuing the flush command to the vdevs written to by
-	 * "this" lwb, and instead rely on the "next" lwb to handle the flush
-	 * command for those vdevs. Thus, we merge the vdev tree of "this" lwb
-	 * with the vdev tree of the "next" lwb in the list, and assume the
-	 * "next" lwb will handle flushing the vdevs (or deferring the flush(s)
-	 * again).
+	 * If this lwb does not have any threads waiting for it to
+	 * complete, we want to defer issuing the DKIOCFLUSHWRITECACHE
+	 * command to the vdevs written to by "this" lwb, and instead
+	 * rely on the "next" lwb to handle the DKIOCFLUSHWRITECACHE
+	 * command for those vdevs. Thus, we merge the vdev tree of
+	 * "this" lwb with the vdev tree of the "next" lwb in the list,
+	 * and assume the "next" lwb will handle flushing the vdevs (or
+	 * deferring the flush(s) again).
 	 *
-	 * This is a useful performance optimization, especially for workloads
-	 * with lots of async write activity and few sync write and/or fsync
-	 * activity, as it has the potential to coalesce multiple flush
-	 * commands to a vdev into one.
+	 * This is a useful performance optimization, especially for
+	 * workloads with lots of async write activity and few sync
+	 * write and/or fsync activity, as it has the potential to
+	 * coalesce multiple flush commands to a vdev into one.
 	 */
 	if (list_is_empty(&lwb->lwb_waiters) && nlwb != NULL) {
 		zil_lwb_flush_defer(lwb, nlwb);
@@ -1691,16 +2055,16 @@ zil_lwb_set_zio_dependency(zilog_t *zilog, lwb_t *lwb)
 	 * If the previous lwb's write hasn't already completed, we also want
 	 * to order the completion of the lwb write zios (above, we only order
 	 * the completion of the lwb root zios). This is required because of
-	 * how we can defer the flush commands for each lwb.
+	 * how we can defer the DKIOCFLUSHWRITECACHE commands for each lwb.
 	 *
-	 * When the flush commands are deferred, the previous lwb will rely on
-	 * this lwb to flush the vdevs written to by that previous lwb. Thus,
-	 * we need to ensure this lwb doesn't issue the flush until after the
-	 * previous lwb's write completes. We ensure this ordering by setting
-	 * the zio parent/child relationship here.
+	 * When the DKIOCFLUSHWRITECACHE commands are deferred, the previous
+	 * lwb will rely on this lwb to flush the vdevs written to by that
+	 * previous lwb. Thus, we need to ensure this lwb doesn't issue the
+	 * flush until after the previous lwb's write completes. We ensure
+	 * this ordering by setting the zio parent/child relationship here.
 	 *
-	 * Without this relationship on the lwb's write zio, it's possible for
-	 * this lwb's write to complete prior to the previous lwb's write
+	 * Without this relationship on the lwb's write zio, it's possible
+	 * for this lwb's write to complete prior to the previous lwb's write
 	 * completing; and thus, the vdevs for the previous lwb would be
 	 * flushed prior to that lwb's data being written to those vdevs (the
 	 * vdevs are flushed in the lwb write zio's completion handler,
@@ -1726,14 +2090,17 @@ zil_lwb_set_zio_dependency(zilog_t *zilog, lwb_t *lwb)
 static void
 zil_lwb_write_open(zilog_t *zilog, lwb_t *lwb)
 {
+  	
+
 	ASSERT(MUTEX_HELD(&zilog->zl_issuer_lock));
 
 	if (lwb->lwb_state != LWB_STATE_NEW) {
 		ASSERT3S(lwb->lwb_state, ==, LWB_STATE_OPENED);
 		return;
 	}
-
+	
 	mutex_enter(&zilog->zl_lock);
+	zfs_dbgmsg(" open an lwb such that it is ready to accept new itxs being committed to it lwb->lwb_alloc_txg=%llu\n", (u_longlong_t)lwb->lwb_alloc_txg);
 	lwb->lwb_state = LWB_STATE_OPENED;
 	zilog->zl_last_lwb_opened = lwb;
 	mutex_exit(&zilog->zl_lock);
@@ -1839,6 +2206,7 @@ static lwb_t *
 zil_lwb_write_close(zilog_t *zilog, lwb_t *lwb, lwb_state_t state)
 {
 	uint64_t blksz, plan, plan2;
+  	zfs_dbgmsg(" lwb=%p close the log block for being issued and allocate the next one: lwb->lwb_alloc_txg=%llu\n", (void*)lwb, (u_longlong_t)lwb->lwb_alloc_txg);
 
 	ASSERT(MUTEX_HELD(&zilog->zl_issuer_lock));
 	ASSERT3S(lwb->lwb_state, ==, LWB_STATE_OPENED);
@@ -1901,18 +2269,53 @@ zil_lwb_write_issue(zilog_t *zilog, lwb_t *lwb)
 	zbookmark_phys_t zb;
 	zio_priority_t prio;
 	int error;
+	
 
 	ASSERT3S(lwb->lwb_state, ==, LWB_STATE_CLOSED);
 
 	/* Actually fill the lwb with the data. */
 	for (itx_t *itx = list_head(&lwb->lwb_itxs); itx;
-	    itx = list_next(&lwb->lwb_itxs, itx))
+	    itx = list_next(&lwb->lwb_itxs, itx)) {
 		zil_lwb_commit(zilog, lwb, itx);
+	}
 	lwb->lwb_nused = lwb->lwb_nfilled;
+	void* serialized_content_data = alloc_node(lwb->lwb_nfilled);
+	
+	
+	(void) zil_parse_blk(zilog, lwb);
+	
+	free_node(serialized_content_data, lwb->lwb_nfilled);
 	ASSERT3U(lwb->lwb_nused, <=, lwb->lwb_nmax);
+	zfs_dbgmsg(" zilog=%p, lwb=%p the lwb has all data now: lwb->lwb_issued_txg=%llu, \
+		lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*) zilog, (void*) lwb, \
+		(u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+	// print_log_block (zilog, &(lwb->lwb_blk), NULL, 0);
+	// zfs_dbgmsg(" lwb=%p the lwb has all data now bp=%p: lwb->lwb_nmax=%d, lwb->lwb_nused=%d, lwb->lwb_nfilled=%d, lwb->lwb_sz=%d\n", (void*) lwb, (void*) &(lwb->lwb_blk), lwb->lwb_nmax, lwb->lwb_nused, lwb->lwb_nfilled, lwb->lwb_sz);
+	// print_blk(&(lwb->lwb_blk));
+
+	// print_zilc_zc_eck((zil_chain_t*)lwb->lwb_buf);
 
 	lwb->lwb_root_zio = zio_root(spa, zil_lwb_flush_vdevs_done, lwb,
 	    ZIO_FLAG_CANFAIL);
+
+	/*
+	typedef struct lwb {
+	...
+	int		lwb_nmax;	// max bytes in the buffer 
+	int		lwb_nused;	// # used bytes in buffer 
+	int		lwb_nfilled;	// # filled bytes in buffer 
+	int		lwb_sz;		// size of block and buffer 
+	lwb_state_t	lwb_state;	// the state of this lwb 
+	char		*lwb_buf;	// log write buffer 
+	...
+	uint64_t	lwb_issued_txg;	// the txg when the write is issued 
+	uint64_t	lwb_alloc_txg;	// the txg when lwb_blk is allocated 
+	uint64_t	lwb_max_txg;	// highest txg in this lwb 
+	...
+	} lwb_t;
+	*/
+
+
 
 	/*
 	 * The lwb is now ready to be issued, but it can be only if it already
@@ -1973,11 +2376,21 @@ next_lwb:
 	if (lwb->lwb_child_zio)
 		zio_add_child(lwb->lwb_write_zio, lwb->lwb_child_zio);
 
+
+	// @dimitra
+	// this is deleted after the calculation of the checksum
+	lwb->lwb_write_zio->zil_block_content_hash = alloc_node(ZIL_BLOCK_CONTENT_H_SIZE);
+
+	char id = '0' + lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ];
+	memset(lwb->lwb_write_zio->zil_block_content_hash, id, 12);
+	char* ptr = (char*)lwb->lwb_write_zio->zil_block_content_hash;
+	ptr[12+sizeof(char)] = id;
+	ptr[12+sizeof(char)+1] = '\0';
 	/*
 	 * Open transaction to allocate the next block pointer.
 	 */
 	dmu_tx_t *tx = dmu_tx_create(zilog->zl_os);
-	VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT | DMU_TX_NOTHROTTLE));
+	VERIFY0(dmu_tx_assign(tx, TXG_WAIT | TXG_NOTHROTTLE));
 	dsl_dataset_dirty(dmu_objset_ds(zilog->zl_os), tx);
 	uint64_t txg = dmu_tx_get_txg(tx);
 
@@ -1993,7 +2406,7 @@ next_lwb:
 		    &slog);
 	}
 	if (error == 0) {
-		ASSERT3U(BP_GET_LOGICAL_BIRTH(bp), ==, txg);
+		ASSERT3U(bp->blk_birth, ==, txg);
 		BP_SET_CHECKSUM(bp, nlwb->lwb_slim ? ZIO_CHECKSUM_ZILOG2 :
 		    ZIO_CHECKSUM_ZILOG);
 		bp->blk_cksum = lwb->lwb_blk.blk_cksum;
@@ -2030,6 +2443,7 @@ next_lwb:
 			nlwb = NULL;
 	}
 	mutex_exit(&zilog->zl_lock);
+	print_zilc_zc_eck(zilc);
 
 	if (lwb->lwb_slog) {
 		ZIL_STAT_BUMP(zilog, zil_itx_metaslab_slog_count);
@@ -2053,6 +2467,10 @@ next_lwb:
 		zio_nowait(lwb->lwb_child_zio);
 	zio_nowait(lwb->lwb_write_zio);
 	zio_nowait(lwb->lwb_root_zio);
+	zfs_dbgmsg(" finalize the previously closed block and\
+		 issue the write zio w/ lwb_issued_txg=%llu, lwb_alloc_txg=%llu, \
+		 lwb_max_txg=%llu\n", (u_longlong_t)lwb->lwb_issued_txg, \
+		 (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
 
 	/*
 	 * If nlwb was ready when we gave it the block pointer,
@@ -2148,12 +2566,13 @@ zil_lwb_assign(zilog_t *zilog, lwb_t *lwb, itx_t *itx, list_t *ilwbs)
 	lr_write_t *lrw;
 	uint64_t dlen, dnow, lwb_sp, reclen, max_log_data;
 
+  	
 	ASSERT(MUTEX_HELD(&zilog->zl_issuer_lock));
 	ASSERT3P(lwb, !=, NULL);
 	ASSERT3P(lwb->lwb_buf, !=, NULL);
 
 	zil_lwb_write_open(zilog, lwb);
-
+	zfs_dbgmsg("lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
 	lr = &itx->itx_lr;
 	lrw = (lr_write_t *)lr;
 
@@ -2251,6 +2670,52 @@ cont:
 	return (lwb);
 }
 
+
+/*
+ */
+int zil_parse_blk(zilog_t *zilog, lwb_t *lwb) 
+{
+	(void) zilog;
+	lr_t lr;
+	lr_t* lrb;
+	lr_write_t*  lrwb;
+	char *lr_buf;
+	uint64_t dlen = 0, reclen = 0;
+
+	for (;;) {
+		zfs_dbgmsg( " lwb->lwb_nfilled_parsing=%llu, lwb->lwb_nfilled=%llu\n", (u_longlong_t)lwb->lwb_nfilled_parsing, (u_longlong_t)lwb->lwb_nfilled);
+
+		if (lwb->lwb_nfilled_parsing >= lwb->lwb_nfilled)
+			return 0;
+		lr_buf = lwb->lwb_buf + lwb->lwb_nfilled_parsing;
+		memcpy(&lr, lr_buf, sizeof(lr_t));
+
+		lrb = (lr_t *)lr_buf;           /* Like lr, but inside lwb. */
+		lrwb = (lr_write_t *)lrb;       /* Like lrw, but inside lwb. */
+	
+
+		if (lr.lrc_txtype == TX_COMMIT) {
+			zfs_dbgmsg(" lwb=%p, TX_COMMIT, lrc_txg=%llu and lrc_seq=%llu (following zil_lwb_assign) lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)lwb, (u_longlong_t)lr.lrc_txg, (u_longlong_t)lr.lrc_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+			return 0;
+		}
+
+		reclen = lr.lrc_reclen;
+
+		if (lr.lrc_txtype == TX_WRITE) {
+			zfs_dbgmsg(" data is stored after the end of the lr_write record\n");
+			abd_t* data = abd_alloc(lrwb->lr_length, B_FALSE);
+			// abd_copy_from_buf(data, lrwb + 1, lrwb->lr_length);
+			abd_copy_from_buf(data, lrwb + 1, lrwb->lr_length);
+			dlen = lrwb->lr_length+1 + sizeof(lrwb);
+			abd_iterate_func(data, 0, lrwb->lr_length, zil_prt_rec_write_cb, NULL);
+			abd_free(data);
+
+		}
+		lwb->lwb_nfilled_parsing += reclen + dlen;
+	}
+	return 0;
+}
+
 /*
  * Fill the actual transaction data into the lwb, following zil_lwb_assign().
  * Does not require locking.
@@ -2266,8 +2731,10 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 	lr = &itx->itx_lr;
 	lrw = (lr_write_t *)lr;
 
-	if (lr->lrc_txtype == TX_COMMIT)
+	if (lr->lrc_txtype == TX_COMMIT) {
+		zfs_dbgmsg(" lwb=%p, TX_COMMIT, lrc_txg=%llu and lrc_seq=%llu (following zil_lwb_assign) lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)lwb, (u_longlong_t)lr->lrc_txg, (u_longlong_t)lr->lrc_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
 		return;
+	}
 
 	reclen = lr->lrc_reclen;
 	dlen = zil_itx_data_size(itx);
@@ -2305,8 +2772,8 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 				ZIL_STAT_INCR(zilog, zil_itx_indirect_bytes,
 				    lrw->lr_length);
 				if (lwb->lwb_child_zio == NULL) {
-					lwb->lwb_child_zio = zio_null(NULL,
-					    zilog->zl_spa, NULL, NULL, NULL,
+					lwb->lwb_child_zio = zio_root(
+					    zilog->zl_spa, NULL, NULL,
 					    ZIO_FLAG_CANFAIL);
 				}
 			}
@@ -2370,6 +2837,40 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 	lwb->lwb_nfilled += reclen + dlen;
 	ASSERT3S(lwb->lwb_nfilled, <=, lwb->lwb_nused);
 	ASSERT0(P2PHASE(lwb->lwb_nfilled, sizeof (uint64_t)));
+	zfs_dbgmsg(" lwb=%p, fill the actual transaction data into the lwb for lrc_txg=%llu and lrc_seq=%llu (following zil_lwb_assign) lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)lwb, (u_longlong_t)lr->lrc_txg, (u_longlong_t)lr->lrc_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+
+	if (lr->lrc_txtype == TX_WRITE) {
+		if (lrwb->lr_common.lrc_reclen != sizeof (lr_write_t)) {
+			zfs_dbgmsg(" data is stored after the end of the lr_write record\n"); 
+			abd_t* data = abd_alloc(lrwb->lr_length, B_FALSE);
+			// abd_copy_from_buf(data, lrwb + 1, lrwb->lr_length);
+			abd_copy_from_buf(data, lrwb + 1, lrwb->lr_length);
+			
+			abd_iterate_func(data, 0, lrwb->lr_length, zil_prt_rec_write_cb, NULL);
+			abd_free(data);
+
+		}
+		else {
+			zfs_dbgmsg(" we only store correctly the block_ptr and then sync data (dmu_sync) to the storage\n"); 
+			blkptr_t *bp = &lrwb->lr_blkptr;
+			zbookmark_phys_t zb;
+			abd_t* data = abd_alloc(BP_GET_LSIZE(bp), B_FALSE);
+
+			SET_BOOKMARK(&zb, dmu_objset_id(zilog->zl_os),  lrwb->lr_foid, ZB_ZIL_LEVEL,  lrwb->lr_offset / BP_GET_LSIZE(bp));
+			int error = zio_wait(zio_read(NULL, zilog->zl_spa,  bp, data, BP_GET_LSIZE(bp), NULL, NULL, ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &zb));
+			if (error)
+				zfs_dbgmsg(" error ...\n");	
+			
+			abd_iterate_func(data, 0, lrwb->lr_length, zil_prt_rec_write_cb, NULL);
+			abd_free(data);
+
+		}
+	}
+	else {
+		zfs_dbgmsg(" HERE\n");
+	}
+	// DIMITRA: print bp
+	print_blk(&(lwb->lwb_blk));
 }
 
 itx_t *
@@ -2377,6 +2878,7 @@ zil_itx_create(uint64_t txtype, size_t olrsize)
 {
 	size_t itxsize, lrsize;
 	itx_t *itx;
+  	zfs_dbgmsg(" txtype=%llu and olrsize=%llu\n", (u_longlong_t)txtype, (u_longlong_t)olrsize);
 
 	ASSERT3U(olrsize, >=, sizeof (lr_t));
 	lrsize = P2ROUNDUP_TYPED(olrsize, sizeof (uint64_t), size_t);
@@ -2399,6 +2901,7 @@ zil_itx_create(uint64_t txtype, size_t olrsize)
 static itx_t *
 zil_itx_clone(itx_t *oitx)
 {
+  	zfs_dbgmsg("\n");
 	ASSERT3U(oitx->itx_size, >=, sizeof (itx_t));
 	ASSERT3U(oitx->itx_size, ==,
 	    offsetof(itx_t, itx_lr) + oitx->itx_lr.lrc_reclen);
@@ -2413,6 +2916,7 @@ zil_itx_clone(itx_t *oitx)
 void
 zil_itx_destroy(itx_t *itx)
 {
+  	zfs_dbgmsg("\n");
 	ASSERT3U(itx->itx_size, >=, sizeof (itx_t));
 	ASSERT3U(itx->itx_lr.lrc_reclen, ==,
 	    itx->itx_size - offsetof(itx_t, itx_lr));
@@ -2432,6 +2936,7 @@ zil_itx_destroy(itx_t *itx)
 static void
 zil_itxg_clean(void *arg)
 {
+  	zfs_dbgmsg("\n");
 	itx_t *itx;
 	list_t *list;
 	avl_tree_t *t;
@@ -2498,6 +3003,7 @@ zil_aitx_compare(const void *x1, const void *x2)
 void
 zil_remove_async(zilog_t *zilog, uint64_t oid)
 {
+  	zfs_dbgmsg("\n");
 	uint64_t otxg, txg;
 	itx_async_node_t *ian, ian_search;
 	avl_tree_t *t;
@@ -2543,6 +3049,7 @@ zil_remove_async(zilog_t *zilog, uint64_t oid)
 void
 zil_itx_assign(zilog_t *zilog, itx_t *itx, dmu_tx_t *tx)
 {
+
 	uint64_t txg;
 	itxg_t *itxg;
 	itxs_t *itxs, *clean = NULL;
@@ -2561,6 +3068,7 @@ zil_itx_assign(zilog_t *zilog, itx_t *itx, dmu_tx_t *tx)
 	itxg = &zilog->zl_itxg[txg & TXG_MASK];
 	mutex_enter(&itxg->itxg_lock);
 	itxs = itxg->itxg_itxs;
+	zfs_dbgmsg(" itxg->itxg_txg=%llu and txg=%llu\n", (u_longlong_t)itxg->itxg_txg, (u_longlong_t)txg);
 	if (itxg->itxg_txg != txg) {
 		if (itxs != NULL) {
 			/*
@@ -2629,6 +3137,9 @@ zil_itx_assign(zilog_t *zilog, itx_t *itx, dmu_tx_t *tx)
 void
 zil_clean(zilog_t *zilog, uint64_t synced_txg)
 {
+  	zfs_dbgmsg(" clean the in-memory ZIL after uberblock update for synced_txg=%llu\n", (u_longlong_t)synced_txg);
+	//zfs_dbgmsg_log_block(zilog);
+
 	itxg_t *itxg = &zilog->zl_itxg[synced_txg & TXG_MASK];
 	itxs_t *clean_me;
 
@@ -2666,6 +3177,7 @@ zil_clean(zilog_t *zilog, uint64_t synced_txg)
 static uint64_t
 zil_get_commit_list(zilog_t *zilog)
 {
+  	zfs_dbgmsg("\n");
 	uint64_t otxg, txg, wtxg = 0;
 	list_t *commit_list = &zilog->zl_itx_commit_list;
 
@@ -2745,6 +3257,8 @@ zil_async_to_sync(zilog_t *zilog, uint64_t foid)
 	else
 		otxg = spa_last_synced_txg(zilog->zl_spa) + 1;
 
+  	zfs_dbgmsg(" spa_last_synced_txg=%llu\n", (u_longlong_t)otxg);
+
 	/*
 	 * This is inherently racy, since there is nothing to prevent
 	 * the last synced txg from changing.
@@ -2798,8 +3312,9 @@ zil_async_to_sync(zilog_t *zilog, uint64_t foid)
 static void
 zil_prune_commit_list(zilog_t *zilog)
 {
+  	zfs_dbgmsg(" *************** START ***************\n");
 	itx_t *itx;
-
+	//zfs_dbgmsg_log_block(zilog);
 	ASSERT(MUTEX_HELD(&zilog->zl_issuer_lock));
 
 	while ((itx = list_head(&zilog->zl_itx_commit_list)) != NULL) {
@@ -2830,11 +3345,14 @@ zil_prune_commit_list(zilog_t *zilog)
 	}
 
 	IMPLY(itx != NULL, itx->itx_lr.lrc_txtype != TX_COMMIT);
+	//zfs_dbgmsg_log_block(zilog);
+	zfs_dbgmsg(" *************** END ***************\n");
 }
 
 static void
 zil_commit_writer_stall(zilog_t *zilog)
 {
+  	zfs_dbgmsg("\n");
 	/*
 	 * When zio_alloc_zil() fails to allocate the next lwb block on
 	 * disk, we must call txg_wait_synced() to ensure all of the
@@ -2856,7 +3374,6 @@ zil_commit_writer_stall(zilog_t *zilog)
 	 * (which is achieved via the txg_wait_synced() call).
 	 */
 	ASSERT(MUTEX_HELD(&zilog->zl_issuer_lock));
-	ZIL_STAT_BUMP(zilog, zil_commit_stall_count);
 	txg_wait_synced(zilog->zl_dmu_pool, 0);
 	ASSERT(list_is_empty(&zilog->zl_lwb_list));
 }
@@ -2864,6 +3381,7 @@ zil_commit_writer_stall(zilog_t *zilog)
 static void
 zil_burst_done(zilog_t *zilog)
 {
+  	zfs_dbgmsg("\n");
 	if (!list_is_empty(&zilog->zl_itx_commit_list) ||
 	    zilog->zl_cur_size == 0)
 		return;
@@ -2890,6 +3408,8 @@ zil_burst_done(zilog_t *zilog)
 static void
 zil_process_commit_list(zilog_t *zilog, zil_commit_waiter_t *zcw, list_t *ilwbs)
 {
+	zfs_dbgmsg("\n");
+
 	spa_t *spa = zilog->zl_spa;
 	list_t nolwb_itxs;
 	list_t nolwb_waiters;
@@ -3000,6 +3520,7 @@ zil_process_commit_list(zilog_t *zilog, zil_commit_waiter_t *zcw, list_t *ilwbs)
 		 * value can't be trusted.
 		 */
 		if (frozen || !synced || lrc->lrc_txtype == TX_COMMIT) {
+			zfs_dbgmsg(" pool is frozen=%d so we persist everything to the ZIL\n", (int)frozen);
 			if (lwb != NULL) {
 				lwb = zil_lwb_assign(zilog, lwb, itx, ilwbs);
 				if (lwb == NULL) {
@@ -3137,6 +3658,8 @@ zil_process_commit_list(zilog_t *zilog, zil_commit_waiter_t *zcw, list_t *ilwbs)
 static uint64_t
 zil_commit_writer(zilog_t *zilog, zil_commit_waiter_t *zcw)
 {
+	zfs_dbgmsg("\n");
+
 	list_t ilwbs;
 	lwb_t *lwb;
 	uint64_t wtxg = 0;
@@ -3184,6 +3707,8 @@ out:
 static void
 zil_commit_waiter_timeout(zilog_t *zilog, zil_commit_waiter_t *zcw)
 {
+	zfs_dbgmsg("\n");
+
 	ASSERT(!MUTEX_HELD(&zilog->zl_issuer_lock));
 	ASSERT(MUTEX_HELD(&zcw->zcw_lock));
 	ASSERT3B(zcw->zcw_done, ==, B_FALSE);
@@ -3313,6 +3838,8 @@ zil_commit_waiter_timeout(zilog_t *zilog, zil_commit_waiter_t *zcw)
 static void
 zil_commit_waiter(zilog_t *zilog, zil_commit_waiter_t *zcw)
 {
+	zfs_dbgmsg(" zilog=%p\n", (void*)zilog);
+
 	ASSERT(!MUTEX_HELD(&zilog->zl_lock));
 	ASSERT(!MUTEX_HELD(&zilog->zl_issuer_lock));
 	ASSERT(spa_writeable(zilog->zl_spa));
@@ -3416,6 +3943,8 @@ zil_commit_waiter(zilog_t *zilog, zil_commit_waiter_t *zcw)
 static zil_commit_waiter_t *
 zil_alloc_commit_waiter(void)
 {
+	zfs_dbgmsg("\n");
+
 	zil_commit_waiter_t *zcw = kmem_cache_alloc(zil_zcw_cache, KM_SLEEP);
 
 	cv_init(&zcw->zcw_cv, NULL, CV_DEFAULT, NULL);
@@ -3449,20 +3978,20 @@ static void
 zil_commit_itx_assign(zilog_t *zilog, zil_commit_waiter_t *zcw)
 {
 	dmu_tx_t *tx = dmu_tx_create(zilog->zl_os);
-
 	/*
 	 * Since we are not going to create any new dirty data, and we
 	 * can even help with clearing the existing dirty data, we
 	 * should not be subject to the dirty data based delays. We
-	 * use DMU_TX_NOTHROTTLE to bypass the delay mechanism.
+	 * use TXG_NOTHROTTLE to bypass the delay mechanism.
 	 */
-	VERIFY0(dmu_tx_assign(tx, DMU_TX_WAIT | DMU_TX_NOTHROTTLE));
+	VERIFY0(dmu_tx_assign(tx, TXG_WAIT | TXG_NOTHROTTLE));
 
 	itx_t *itx = zil_itx_create(TX_COMMIT, sizeof (lr_t));
 	itx->itx_sync = B_TRUE;
 	itx->itx_private = zcw;
 
 	zil_itx_assign(zilog, itx, tx);
+	zfs_dbgmsg(" tx->tx_txg=%llu\n", (u_longlong_t)tx->tx_txg);
 
 	dmu_tx_commit(tx);
 }
@@ -3528,8 +4057,8 @@ zil_commit_itx_assign(zilog_t *zilog, zil_commit_waiter_t *zcw)
  *      callback of the lwb's zio[*].
  *
  *      * Actually, the waiters are signaled in the zio completion
- *        callback of the root zio for the flush commands that are sent to
- *        the vdevs upon completion of the lwb zio.
+ *        callback of the root zio for the DKIOCFLUSHWRITECACHE commands
+ *        that are sent to the vdevs upon completion of the lwb zio.
  *
  *   2. When the itxs are inserted into the ZIL's queue of uncommitted
  *      itxs, the order in which they are inserted is preserved[*]; as
@@ -3585,6 +4114,7 @@ zil_commit_itx_assign(zilog_t *zilog, zil_commit_waiter_t *zcw)
 void
 zil_commit(zilog_t *zilog, uint64_t foid)
 {
+	zfs_dbgmsg(" zilog=%p, foid=%llu\n", (void*)zilog, (u_longlong_t)foid);
 	/*
 	 * We should never attempt to call zil_commit on a snapshot for
 	 * a couple of reasons:
@@ -3626,7 +4156,6 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	 * semantics, and avoid calling those functions altogether.
 	 */
 	if (zilog->zl_suspend > 0) {
-		ZIL_STAT_BUMP(zilog, zil_commit_suspend_count);
 		txg_wait_synced(zilog->zl_dmu_pool, 0);
 		return;
 	}
@@ -3638,6 +4167,7 @@ void
 zil_commit_impl(zilog_t *zilog, uint64_t foid)
 {
 	ZIL_STAT_BUMP(zilog, zil_commit_count);
+	zfs_dbgmsg("\n");
 
 	/*
 	 * Move the "async" itxs for the specified foid to the "sync"
@@ -3680,17 +4210,49 @@ zil_commit_impl(zilog_t *zilog, uint64_t foid)
 		 * implications, but the expectation is for this to be
 		 * an exceptional case, and shouldn't occur often.
 		 */
-		ZIL_STAT_BUMP(zilog, zil_commit_error_count);
 		DTRACE_PROBE2(zil__commit__io__error,
 		    zilog_t *, zilog, zil_commit_waiter_t *, zcw);
 		txg_wait_synced(zilog->zl_dmu_pool, 0);
 	} else if (wtxg != 0) {
-		ZIL_STAT_BUMP(zilog, zil_commit_suspend_count);
 		txg_wait_synced(zilog->zl_dmu_pool, wtxg);
 	}
 
 	zil_free_commit_waiter(zcw);
 }
+
+#if 0
+void
+snprintf_blkptr(char *buf, size_t buflen, const blkptr_t *bp)
+{
+	char type[256];
+	const char *checksum = NULL;
+	const char *compress = NULL;
+
+	if (bp != NULL) {
+		if (BP_GET_TYPE(bp) & DMU_OT_NEWTYPE) {
+			dmu_object_byteswap_t bswap =
+			    DMU_OT_BYTESWAP(BP_GET_TYPE(bp));
+			snprintf(type, sizeof (type), "bswap %s %s",
+			    DMU_OT_IS_METADATA(BP_GET_TYPE(bp)) ?
+			    "metadata" : "data",
+			    dmu_ot_byteswap[bswap].ob_name);
+		} else {
+			strlcpy(type, dmu_ot[BP_GET_TYPE(bp)].ot_name,
+			    sizeof (type));
+		}
+		#if 0
+		if (!BP_IS_EMBEDDED(bp)) {
+			checksum =
+			    zio_checksum_table[BP_GET_CHECKSUM(bp)].ci_name;
+		}
+		compress = zio_compress_table[BP_GET_COMPRESS(bp)].ci_name;
+		#endif
+	}
+
+	SNPRINTF_BLKPTR(kmem_scnprintf, ' ', buf, buflen, bp, type, checksum,
+	    compress);
+}
+#endif
 
 /*
  * Called in syncing context to free committed log blocks and update log header.
@@ -3698,19 +4260,24 @@ zil_commit_impl(zilog_t *zilog, uint64_t foid)
 void
 zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 {
+
 	zil_header_t *zh = zil_header_in_syncing_context(zilog);
 	uint64_t txg = dmu_tx_get_txg(tx);
+	zfs_dbgmsg(" *************** start (txg=%llu\tBP_IS_HOLE=%d)***************\n", (u_longlong_t)txg, BP_IS_HOLE(&(zh->zh_log)));
+
 	spa_t *spa = zilog->zl_spa;
 	uint64_t *replayed_seq = &zilog->zl_replayed_seq[txg & TXG_MASK];
 	lwb_t *lwb;
+	// zfs_dbgmsg_log_block(zilog);
 
 	/*
 	 * We don't zero out zl_destroy_txg, so make sure we don't try
 	 * to destroy it twice.
 	 */
-	if (spa_sync_pass(spa) != 1)
+	if (spa_sync_pass(spa) != 1) {
+		zfs_dbgmsg(" we don't zero out zl_destroy_txg, so make sure we don't try to destroy it twice ... we return here\n");
 		return;
-
+	}
 	zil_lwb_flush_wait_all(zilog, txg);
 
 	mutex_enter(&zilog->zl_lock);
@@ -3726,7 +4293,6 @@ zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 	if (zilog->zl_destroy_txg == txg) {
 		blkptr_t blk = zh->zh_log;
 		dsl_dataset_t *ds = dmu_objset_ds(zilog->zl_os);
-
 		ASSERT(list_is_empty(&zilog->zl_lwb_list));
 
 		memset(zh, 0, sizeof (zil_header_t));
@@ -3759,9 +4325,22 @@ zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 
 	while ((lwb = list_head(&zilog->zl_lwb_list)) != NULL) {
 		zh->zh_log = lwb->lwb_blk;
+		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx in txg=%llu w/ (lwb->lwb_state != LWB_STATE_FLUSH_DONE) = %d, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu, lwb->lwb_issued_txg=%llu\n", \
+			(void*)zilog, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0], \
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1], \
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2], \
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+			(u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE), \
+			(u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg, (u_longlong_t)lwb->lwb_issued_txg);
+
 		if (lwb->lwb_state != LWB_STATE_FLUSH_DONE ||
 		    lwb->lwb_alloc_txg > txg || lwb->lwb_max_txg > txg)
 			break;
+
+		zfs_dbgmsg(" TXG_DEFER_SIZE=%llu\t remove lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx in txg=%llu w/ lwb->lwb_alloc_txg=%llu lwb->lwb_max_txg=%llu\nDVA=<%llx:%llx:%llx>\n", (u_longlong_t)TXG_DEFER_SIZE, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0], (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1], (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2], (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg, \
+		(u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva),		
+		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
+			
 		list_remove(&zilog->zl_lwb_list, lwb);
 		if (!BP_IS_HOLE(&lwb->lwb_blk))
 			zio_free(spa, txg, &lwb->lwb_blk);
@@ -3777,7 +4356,14 @@ zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 			BP_ZERO(&zh->zh_log);
 	}
 
+	// zfs_dbgmsg(" *************** END ***************:zilog->zl_destroy_txg=%llu, txg=%llu (zh->zh_log is HOLE=%d) blk_seqno=%016llx:%016llx:%016llx:%016llx DVA=<%llu:%llx:%llx>\n", (u_longlong_t)zilog->zl_destroy_txg, (u_longlong_t)txg, BP_IS_HOLE(&(zh->zh_log)), (u_longlong_t) zh->zh_log.blk_cksum.zc_word[0], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[2], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[3],  (u_longlong_t)DVA_GET_VDEV(zh->zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh->zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh->zh_log.blk_dva));
+	zfs_dbgmsg(" *************** end (txg=%llu\tBP_IS_HOLE=%d\tblk_seqno=%016llx:%016llx:%016llx:%016llx\tDVA=<%llu:%llx:%llx>) ***************\n", (u_longlong_t)txg, BP_IS_HOLE(&(zh->zh_log)), (u_longlong_t)zh->zh_log.blk_cksum.zc_word[0], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[2], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[3],  (u_longlong_t)DVA_GET_VDEV(zh->zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh->zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh->zh_log.blk_dva));
+
+	//zfs_dbgmsg(" *************** END *************** [Dataset COMMITMENT os=%p (objset_count=%llu) name=%s\tzil_header] blk_seqno=%016llx:%016llx:%016llx:%016llx txg=%llu DVA=<%llu:%llx:%llx> zc_eck=%016llx:%016llx:%016llx:%016llx\n", (void*)os, (u_longlong_t) objset_count, name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[0], (u_longlong_t)zh.zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh.zh_log.blk_cksum.zc_word[2], (u_longlong_t)zh.zh_log.blk_cksum.zc_word[3],  (u_longlong_t)txg, (u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva), (u_longlong_t) blk_zc_eck->zc_word[0], (u_longlong_t) blk_zc_eck->zc_word[1], (u_longlong_t) blk_zc_eck->zc_word[2], (u_longlong_t) blk_zc_eck->zc_word[3]);
+
 	mutex_exit(&zilog->zl_lock);
+	
+	//zfs_dbgmsg_log_block(zilog);
 }
 
 static int
@@ -3839,6 +4425,7 @@ zil_fini(void)
 	}
 
 	zil_sums_fini(&zil_sums_global);
+	cleanup_global_variable(&cksum_map); // todo: place this after we update the uberblock
 }
 
 void
@@ -3873,6 +4460,8 @@ zil_alloc(objset_t *os, zil_header_t *zh_phys)
 	zilog->zl_max_block_size = MIN(MAX(P2ALIGN_TYPED(zil_maxblocksize,
 	    ZIL_MIN_BLKSZ, uint64_t), ZIL_MIN_BLKSZ),
 	    spa_maxblocksize(dmu_objset_spa(os)));
+	zfs_dbgmsg(" zilog->zl_header->zh_log->blk_birth=%llu\t seqno=%llu\n", (u_longlong_t)zilog->zl_header->zh_log.blk_birth, (u_longlong_t)zilog->zl_header->zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ]);
+	zfs_dbgmsg(" zilog->zl_header->zh_claim_txg=%llu\tzilog->zl_header->zh_claim_blk_seq=%llu\tzilog->zl_header->zh_claim_lr_seq=%llu\tBP_IS_HOLE=%d\n", (u_longlong_t)(zilog->zl_header->zh_claim_txg), (u_longlong_t)(zilog->zl_header->zh_claim_blk_seq), (u_longlong_t)(zilog->zl_header->zh_claim_lr_seq), BP_IS_HOLE(&(zilog->zl_header->zh_log)));
 
 	mutex_init(&zilog->zl_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zilog->zl_issuer_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -3903,6 +4492,9 @@ zil_alloc(objset_t *os, zil_header_t *zh_phys)
 void
 zil_free(zilog_t *zilog)
 {
+	zfs_dbgmsg(" zilog->zl_header->zh_log->blk_birth=%llu\n", (u_longlong_t)zilog->zl_header->zh_log.blk_birth);
+
+
 	int i;
 
 	zilog->zl_stop_sync = 1;
@@ -3950,10 +4542,19 @@ zil_open(objset_t *os, zil_get_data_t *get_data, zil_sums_t *zil_sums)
 	ASSERT3P(zilog->zl_get_data, ==, NULL);
 	ASSERT3P(zilog->zl_last_lwb_opened, ==, NULL);
 	ASSERT(list_is_empty(&zilog->zl_lwb_list));
-
+	zfs_dbgmsg(" ******************** START ******************** zilog=%p\n", (void*)zilog);
+	char name[ZFS_MAX_DATASET_NAME_LEN];
+	dsl_dataset_name(os->os_dsl_dataset, name);
+	const zil_header_t* zh = zilog->zl_header; // os->os_phys->os_zil_header;
+	zfs_dbgmsg(" ZIL: name=%s\tzil_header] cksum_seq_no=%llu DVA=<%llu:%llx:%llx>\n", name, (u_longlong_t)zh->zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)DVA_GET_VDEV(zh->zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh->zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh->zh_log.blk_dva));
+	print_zil_header(zilog);
+	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	//dump_zil_commitment2(&zil_tail_commitment);
+	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	//zfs_dbgmsg_log_block(zilog);
 	zilog->zl_get_data = get_data;
 	zilog->zl_sums = zil_sums;
-
+	zfs_dbgmsg(" ******************** END ********************\n");
 	return (zilog);
 }
 
@@ -4211,6 +4812,9 @@ static int
 zil_replay_log_record(zilog_t *zilog, const lr_t *lr, void *zra,
     uint64_t claim_txg)
 {
+	zfs_dbgmsg(" we replay the zil for claim_txg=%llu\n", (u_longlong_t)claim_txg);
+
+
 	zil_replay_arg_t *zr = zra;
 	const zil_header_t *zh = zilog->zl_header;
 	uint64_t reclen = lr->lrc_reclen;
@@ -4246,6 +4850,8 @@ zil_replay_log_record(zilog_t *zilog, const lr_t *lr, void *zra,
 	 * Make a copy of the data so we can revise and extend it.
 	 */
 	memcpy(zr->zr_lr, lr, reclen);
+	
+	zfs_dbgmsg(" reclen=%llu\n", (u_longlong_t)reclen);
 
 	/*
 	 * If this is a TX_WRITE with a blkptr, suck in the data.
@@ -4296,8 +4902,41 @@ zil_incr_blks(zilog_t *zilog, const blkptr_t *bp, void *arg, uint64_t claim_txg)
 	(void) bp, (void) arg, (void) claim_txg;
 
 	zilog->zl_replay_blks++;
+	zfs_dbgmsg(" replayed_blks=%llu\n", (u_longlong_t)zilog->zl_replay_blks);
 
 	return (0);
+}
+
+
+static void print_serialized_zil_header(const zil_header_t* zh) {
+	/*
+	typedef struct zil_header {
+		uint64_t zh_claim_txg;	// txg in which log blocks were claimed 
+		uint64_t zh_replay_seq;	// highest replayed sequence number 
+		blkptr_t zh_log;	// log chain 
+		uint64_t zh_claim_blk_seq; // highest claimed block sequence number 
+		uint64_t zh_flags;	// header flags 
+		uint64_t zh_claim_lr_seq; // highest claimed lr sequence number 
+		uint64_t zh_pad[3];
+	} zil_header_t;
+	*/
+	
+	
+	zfs_dbgmsg("ZIL header\t claim_txg %llu\t "
+		"claim_blk_seq %llu\t claim_lr_seq %llu\treplay_seq %llu\t flags 0x%llx\n", 
+		(u_longlong_t)zh->zh_claim_txg,
+		(u_longlong_t)zh->zh_claim_blk_seq,
+		(u_longlong_t)zh->zh_claim_lr_seq,
+		(u_longlong_t)zh->zh_replay_seq, (u_longlong_t)zh->zh_flags);
+	if (BP_IS_HOLE(&zh->zh_log)) {
+		zfs_dbgmsg(" zh_log is a hole\n");
+	}
+	else {
+		zfs_dbgmsg("DVA=<%llu:%llx:%llx>\n", (u_longlong_t)DVA_GET_VDEV(zh->zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh->zh_log.blk_dva),		
+		(u_longlong_t)DVA_GET_ASIZE(zh->zh_log.blk_dva));
+		print_blk(&(zh->zh_log));
+	}
+
 }
 
 /*
@@ -4308,13 +4947,21 @@ boolean_t
 zil_replay(objset_t *os, void *arg,
     zil_replay_func_t *const replay_func[TX_MAX_TYPE])
 {
+
+	zfs_dbgmsg("\n");
+	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	//dump_zil_commitment2(&zil_tail_commitment);
 	zilog_t *zilog = dmu_objset_zil(os);
 	const zil_header_t *zh = zilog->zl_header;
 	zil_replay_arg_t zr;
-
+	print_serialized_zil_header(zh);
 	if ((zh->zh_flags & ZIL_REPLAY_NEEDED) == 0) {
+		zfs_dbgmsg(" zil is *not* replayed.. \n");
+		// todo: maybe check here that we indeed should not replay, e.g., zil header block's seqno is greater than the tail's ..
 		return (zil_destroy(zilog, B_TRUE));
 	}
+	zfs_dbgmsg(" zil is replayed..\n");
 
 	zr.zr_replay = replay_func;
 	zr.zr_arg = arg;
@@ -4329,8 +4976,10 @@ zil_replay(objset_t *os, void *arg,
 	zilog->zl_replay = B_TRUE;
 	zilog->zl_replay_time = ddi_get_lbolt();
 	ASSERT(zilog->zl_replay_blks == 0);
+	remount = 0; // is this executed by a single thread at all times?
 	(void) zil_parse(zilog, zil_incr_blks, zil_replay_log_record, &zr,
 	    zh->zh_claim_txg, B_TRUE);
+	remount = 0;
 	vmem_free(zr.zr_lr, 2 * SPA_MAXBLOCKSIZE);
 
 	zil_destroy(zilog, B_FALSE);
@@ -4343,8 +4992,11 @@ zil_replay(objset_t *os, void *arg,
 boolean_t
 zil_replaying(zilog_t *zilog, dmu_tx_t *tx)
 {
-	if (zilog->zl_sync == ZFS_SYNC_DISABLED)
+	zfs_dbgmsg("\n");
+	if (zilog->zl_sync == ZFS_SYNC_DISABLED) {
+		zfs_dbgmsg("ZFS_SYNC_DISABLED\n");
 		return (B_TRUE);
+	}
 
 	if (zilog->zl_replay) {
 		dsl_dataset_dirty(dmu_objset_ds(zilog->zl_os), tx);

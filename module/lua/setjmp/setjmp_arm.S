@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause
 /*-
  * Copyright 2004-2014 Olivier Houchard <cognet@FreeBSD.org>
  * Copyright 2012-2014 Ian Lepore <ian@FreeBSD.org>

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: MIT
 /*
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */

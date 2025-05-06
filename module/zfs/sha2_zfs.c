@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -41,9 +40,10 @@ sha_incremental(void *buf, size_t size, void *arg)
 }
 
 void
-abd_checksum_sha256(abd_t *abd, uint64_t size,
+abd_checksum_sha256(abd_t *abd, uint64_t size, void* data, 
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	(void) ctx_template;
 	int ret;
 	SHA2_CTX ctx;
@@ -78,9 +78,10 @@ bswap:
 }
 
 void
-abd_checksum_sha512_native(abd_t *abd, uint64_t size,
+abd_checksum_sha512_native(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	(void) ctx_template;
 	SHA2_CTX	ctx;
 
@@ -90,12 +91,13 @@ abd_checksum_sha512_native(abd_t *abd, uint64_t size,
 }
 
 void
-abd_checksum_sha512_byteswap(abd_t *abd, uint64_t size,
+abd_checksum_sha512_byteswap(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	zio_cksum_t	tmp;
 
-	abd_checksum_sha512_native(abd, size, ctx_template, &tmp);
+	abd_checksum_sha512_native(abd, size, data, ctx_template, &tmp);
 	zcp->zc_word[0] = BSWAP_64(tmp.zc_word[0]);
 	zcp->zc_word[1] = BSWAP_64(tmp.zc_word[1]);
 	zcp->zc_word[2] = BSWAP_64(tmp.zc_word[2]);

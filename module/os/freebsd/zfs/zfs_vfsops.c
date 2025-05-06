@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -127,16 +126,25 @@ static int zfs_root(vfs_t *vfsp, int flags, vnode_t **vpp);
 static int zfs_statfs(vfs_t *vfsp, struct statfs *statp);
 static int zfs_vget(vfs_t *vfsp, ino_t ino, int flags, vnode_t **vpp);
 static int zfs_sync(vfs_t *vfsp, int waitfor);
+#if __FreeBSD_version >= 1300098
 static int zfs_checkexp(vfs_t *vfsp, struct sockaddr *nam, uint64_t *extflagsp,
     struct ucred **credanonp, int *numsecflavors, int *secflavors);
+#else
+static int zfs_checkexp(vfs_t *vfsp, struct sockaddr *nam, int *extflagsp,
+    struct ucred **credanonp, int *numsecflavors, int **secflavors);
+#endif
 static int zfs_fhtovp(vfs_t *vfsp, fid_t *fidp, int flags, vnode_t **vpp);
 static void zfs_freevfs(vfs_t *vfsp);
 
 struct vfsops zfs_vfsops = {
 	.vfs_mount =		zfs_mount,
 	.vfs_unmount =		zfs_umount,
+#if __FreeBSD_version >= 1300049
 	.vfs_root =		vfs_cache_root,
-	.vfs_cachedroot =	zfs_root,
+	.vfs_cachedroot = zfs_root,
+#else
+	.vfs_root =		zfs_root,
+#endif
 	.vfs_statfs =		zfs_statfs,
 	.vfs_vget =		zfs_vget,
 	.vfs_sync =		zfs_sync,
@@ -145,14 +153,12 @@ struct vfsops zfs_vfsops = {
 	.vfs_quotactl =		zfs_quotactl,
 };
 
-VFS_SET(zfs_vfsops, zfs, VFCF_DELEGADMIN | VFCF_JAIL
 #ifdef VFCF_CROSS_COPY_FILE_RANGE
-	| VFCF_CROSS_COPY_FILE_RANGE
+VFS_SET(zfs_vfsops, zfs,
+    VFCF_DELEGADMIN | VFCF_JAIL | VFCF_CROSS_COPY_FILE_RANGE);
+#else
+VFS_SET(zfs_vfsops, zfs, VFCF_DELEGADMIN | VFCF_JAIL);
 #endif
-#ifdef VFCF_FILEREVINC
-	| VFCF_FILEREVINC
-#endif
-);
 
 /*
  * We need to keep a count of active fs's.
@@ -617,14 +623,6 @@ acl_type_changed_cb(void *arg, uint64_t newval)
 	zfsvfs->z_acl_type = newval;
 }
 
-static void
-longname_changed_cb(void *arg, uint64_t newval)
-{
-	zfsvfs_t *zfsvfs = arg;
-
-	zfsvfs->z_longname = newval;
-}
-
 static int
 zfs_register_callbacks(vfs_t *vfsp)
 {
@@ -762,8 +760,6 @@ zfs_register_callbacks(vfs_t *vfsp)
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_ACLINHERIT), acl_inherit_changed_cb,
 	    zfsvfs);
-	error = error ? error : dsl_prop_register(ds,
-	    zfs_prop_to_name(ZFS_PROP_LONGNAME), longname_changed_cb, zfsvfs);
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
 		goto unregister;
@@ -802,6 +798,7 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 	int error;
 	uint64_t val;
 
+	zfs_dbgmsg(" Associate this zfsvfs with the given objset, which must be owned. This will cache a bunch of on-disk state from the objset in the zfsvfs.\n");
 	zfsvfs->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
@@ -993,7 +990,7 @@ zfsvfs_create(const char *osname, boolean_t readonly, zfsvfs_t **zfvp)
 		kmem_free(zfsvfs, sizeof (zfsvfs_t));
 		return (error);
 	}
-
+	zfs_dbgmsg("\n");
 	error = zfsvfs_create_impl(zfvp, zfsvfs, os);
 
 	return (error);
@@ -1182,6 +1179,7 @@ zfs_domount(vfs_t *vfsp, char *osname)
 	int error = 0;
 	zfsvfs_t *zfsvfs;
 
+	zfs_dbgmsg("\n");
 	ASSERT3P(vfsp, !=, NULL);
 	ASSERT3P(osname, !=, NULL);
 
@@ -1361,16 +1359,16 @@ zfs_mount(vfs_t *vfsp)
 
 			vn_lock(mvp, LK_SHARED | LK_RETRY);
 			if (VOP_GETATTR(mvp, &vattr, cr)) {
-				VOP_UNLOCK(mvp);
+				VOP_UNLOCK1(mvp);
 				goto out;
 			}
 
 			if (secpolicy_vnode_owner(mvp, cr, vattr.va_uid) != 0 &&
 			    VOP_ACCESS(mvp, VWRITE, cr, td) != 0) {
-				VOP_UNLOCK(mvp);
+				VOP_UNLOCK1(mvp);
 				goto out;
 			}
-			VOP_UNLOCK(mvp);
+			VOP_UNLOCK1(mvp);
 		}
 
 		secpolicy_fs_mount_clearopts(cr, vfsp);
@@ -1502,8 +1500,7 @@ zfs_statfs(vfs_t *vfsp, struct statfs *statp)
 	strlcpy(statp->f_mntonname, vfsp->mnt_stat.f_mntonname,
 	    sizeof (statp->f_mntonname));
 
-	statp->f_namemax =
-	    zfsvfs->z_longname ? (ZAP_MAXNAMELEN_NEW - 1) : (MAXNAMELEN - 1);
+	statp->f_namemax = MAXNAMELEN - 1;
 
 	zfs_exit(zfsvfs, FTAG);
 	return (0);
@@ -1583,7 +1580,11 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		 * 'z_parent' is self referential for non-snapshots.
 		 */
 #ifdef FREEBSD_NAMECACHE
+#if __FreeBSD_version >= 1300117
 		cache_purgevfs(zfsvfs->z_parent->z_vfs);
+#else
+		cache_purgevfs(zfsvfs->z_parent->z_vfs, true);
+#endif
 #endif
 	}
 
@@ -1650,18 +1651,9 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	zfs_unregister_callbacks(zfsvfs);
 
 	/*
-	 * Evict cached data. We must write out any dirty data before
-	 * disowning the dataset.
+	 * Evict cached data
 	 */
-	objset_t *os = zfsvfs->z_os;
-	boolean_t os_dirty = B_FALSE;
-	for (int t = 0; t < TXG_SIZE; t++) {
-		if (dmu_objset_is_dirty(os, t)) {
-			os_dirty = B_TRUE;
-			break;
-		}
-	}
-	if (!zfs_is_readonly(zfsvfs) && os_dirty)
+	if (!zfs_is_readonly(zfsvfs))
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 	dmu_objset_evict_dbufs(zfsvfs->z_os);
 	dd = zfsvfs->z_os->os_dsl_dataset->ds_dir;
@@ -1785,8 +1777,13 @@ zfs_vget(vfs_t *vfsp, ino_t ino, int flags, vnode_t **vpp)
 }
 
 static int
+#if __FreeBSD_version >= 1300098
 zfs_checkexp(vfs_t *vfsp, struct sockaddr *nam, uint64_t *extflagsp,
     struct ucred **credanonp, int *numsecflavors, int *secflavors)
+#else
+zfs_checkexp(vfs_t *vfsp, struct sockaddr *nam, int *extflagsp,
+    struct ucred **credanonp, int *numsecflavors, int **secflavors)
+#endif
 {
 	zfsvfs_t *zfsvfs = vfsp->vfs_data;
 
@@ -2075,8 +2072,10 @@ zfs_vnodes_adjust_back(void)
 #endif
 }
 
+#if __FreeBSD_version >= 1300139
 static struct sx zfs_vnlru_lock;
 static struct vnode *zfs_vnlru_marker;
+#endif
 static arc_prune_t *zfs_prune;
 
 static void
@@ -2084,9 +2083,13 @@ zfs_prune_task(uint64_t nr_to_scan, void *arg __unused)
 {
 	if (nr_to_scan > INT_MAX)
 		nr_to_scan = INT_MAX;
+#if __FreeBSD_version >= 1300139
 	sx_xlock(&zfs_vnlru_lock);
 	vnlru_free_vfsops(nr_to_scan, &zfs_vfsops, zfs_vnlru_marker);
 	sx_xunlock(&zfs_vnlru_lock);
+#else
+	vnlru_free(nr_to_scan, &zfs_vfsops);
+#endif
 }
 
 void
@@ -2116,8 +2119,10 @@ zfs_init(void)
 
 	zfsvfs_taskq = taskq_create("zfsvfs", 1, minclsyspri, 0, 0, 0);
 
+#if __FreeBSD_version >= 1300139
 	zfs_vnlru_marker = vnlru_alloc_marker();
 	sx_init(&zfs_vnlru_lock, "zfs vnlru lock");
+#endif
 	zfs_prune = arc_add_prune_callback(zfs_prune_task, NULL);
 }
 
@@ -2125,8 +2130,10 @@ void
 zfs_fini(void)
 {
 	arc_remove_prune_callback(zfs_prune);
+#if __FreeBSD_version >= 1300139
 	vnlru_free_marker(zfs_vnlru_marker);
 	sx_destroy(&zfs_vnlru_lock);
+#endif
 
 	taskq_destroy(zfsvfs_taskq);
 	zfsctl_fini();
@@ -2198,7 +2205,7 @@ zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers)
 		    ZFS_SA_ATTRS);
 		dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
 	}
-	error = dmu_tx_assign(tx, DMU_TX_WAIT);
+	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
 		dmu_tx_abort(tx);
 		return (error);

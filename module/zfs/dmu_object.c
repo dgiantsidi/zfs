@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -161,7 +160,7 @@ dmu_object_alloc_impl(objset_t *os, dmu_object_type_t ot, int blocksize,
 			 * is not suitably aligned.
 			 */
 			os->os_obj_next_chunk =
-			    P2ALIGN_TYPED(object, dnodes_per_chunk, uint64_t) +
+			    P2ALIGN(object, dnodes_per_chunk) +
 			    dnodes_per_chunk;
 			(void) atomic_swap_64(cpuobj, object);
 			mutex_exit(&os->os_obj_lock);
@@ -520,5 +519,7 @@ EXPORT_SYMBOL(dmu_object_next);
 EXPORT_SYMBOL(dmu_object_zapify);
 EXPORT_SYMBOL(dmu_object_free_zapified);
 
+/* BEGIN CSTYLED */
 ZFS_MODULE_PARAM(zfs, , dmu_object_alloc_chunk_shift, UINT, ZMOD_RW,
 	"CPU-specific allocator grabs 2^N objects at once");
+/* END CSTYLED */

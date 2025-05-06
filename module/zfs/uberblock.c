@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -71,5 +70,9 @@ uberblock_update(uberblock_t *ub, vdev_t *rvd, uint64_t txg, uint64_t mmp_delay)
 	}
 	ub->ub_checkpoint_txg = 0;
 
-	return (BP_GET_LOGICAL_BIRTH(&ub->ub_rootbp) == txg);
+	char buffer[512];
+	memset(buffer, '\0', sizeof(buffer));
+	snprintf(buffer, sizeof(buffer), "ub_magic=%llu ub_txg=%llu ub_guid_sum=%llu ub_timestamp=%llu ub_software_version=%llu ub_mmp_magic=%llu", (u_longlong_t)ub->ub_magic, (u_longlong_t)ub->ub_txg, (u_longlong_t)ub->ub_guid_sum, (u_longlong_t)ub->ub_timestamp, (u_longlong_t)ub->ub_software_version, (u_longlong_t)ub->ub_mmp_magic);
+	zfs_dbgmsg(" %s\n", buffer);
+	return (ub->ub_rootbp.blk_birth == txg);
 }

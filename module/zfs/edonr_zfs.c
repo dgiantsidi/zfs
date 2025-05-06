@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -47,9 +46,10 @@ edonr_incremental(void *buf, size_t size, void *arg)
  * Native zio_checksum interface for the Edon-R hash function.
  */
 void
-abd_checksum_edonr_native(abd_t *abd, uint64_t size,
+abd_checksum_edonr_native(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	uint8_t		digest[EDONR_MODE / 8];
 	EdonRState	ctx;
 
@@ -64,12 +64,13 @@ abd_checksum_edonr_native(abd_t *abd, uint64_t size,
  * Byteswapped zio_checksum interface for the Edon-R hash function.
  */
 void
-abd_checksum_edonr_byteswap(abd_t *abd, uint64_t size,
+abd_checksum_edonr_byteswap(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	zio_cksum_t	tmp;
 
-	abd_checksum_edonr_native(abd, size, ctx_template, &tmp);
+	abd_checksum_edonr_native(abd, size, data, ctx_template, &tmp);
 	zcp->zc_word[0] = BSWAP_64(zcp->zc_word[0]);
 	zcp->zc_word[1] = BSWAP_64(zcp->zc_word[1]);
 	zcp->zc_word[2] = BSWAP_64(zcp->zc_word[2]);

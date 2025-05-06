@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -43,9 +42,10 @@ skein_incremental(void *buf, size_t size, void *arg)
  * using abd_checksum_skein_tmpl_init.
  */
 void
-abd_checksum_skein_native(abd_t *abd, uint64_t size,
+abd_checksum_skein_native(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	Skein_512_Ctxt_t ctx;
 
 	ASSERT(ctx_template != NULL);
@@ -61,12 +61,13 @@ abd_checksum_skein_native(abd_t *abd, uint64_t size,
  * skein is internally endian-insensitive).
  */
 void
-abd_checksum_skein_byteswap(abd_t *abd, uint64_t size,
+abd_checksum_skein_byteswap(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	zio_cksum_t	tmp;
 
-	abd_checksum_skein_native(abd, size, ctx_template, &tmp);
+	abd_checksum_skein_native(abd, size, data, ctx_template, &tmp);
 	zcp->zc_word[0] = BSWAP_64(tmp.zc_word[0]);
 	zcp->zc_word[1] = BSWAP_64(tmp.zc_word[1]);
 	zcp->zc_word[2] = BSWAP_64(tmp.zc_word[2]);

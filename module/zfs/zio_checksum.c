@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -34,6 +33,9 @@
 #include <sys/abd.h>
 #include <zfs_fletcher.h>
 
+#include <sys/global_map.h>
+#include <sys/global_commitment_map.h>
+//static C_map_t cksum_map;
 /*
  * Checksum vectors.
  *
@@ -93,27 +95,30 @@
  */
 
 static void
-abd_checksum_off(abd_t *abd, uint64_t size,
+abd_checksum_off(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	(void) abd, (void) size, (void) ctx_template;
 	ZIO_SET_CHECKSUM(zcp, 0, 0, 0, 0);
 }
 
 static void
-abd_fletcher_2_native(abd_t *abd, uint64_t size,
+abd_fletcher_2_native(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
 	(void) ctx_template;
+	(void) data;
 	fletcher_init(zcp);
 	(void) abd_iterate_func(abd, 0, size,
 	    fletcher_2_incremental_native, zcp);
 }
 
 static void
-abd_fletcher_2_byteswap(abd_t *abd, uint64_t size,
+abd_fletcher_2_byteswap(abd_t *abd, uint64_t size, void* data,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	(void) ctx_template;
 	fletcher_init(zcp);
 	(void) abd_iterate_func(abd, 0, size,
@@ -128,11 +133,137 @@ abd_fletcher_4_impl(abd_t *abd, uint64_t size, zio_abd_checksum_data_t *acdp)
 	fletcher_4_abd_ops.acf_fini(acdp);
 }
 
+__attribute__((unused)) static int is_empty(const void* buf) {
+	zc_eck empty_value;
+	empty_value.zc_word[0] = 0;
+	empty_value.zc_word[1] = 0;
+	empty_value.zc_word[2] = 0;
+	empty_value.zc_word[3] = 0;
+	if (memcmp(&empty_value, buf, sizeof(empty_value)) == 0)
+	  return 1;
+	return 0;
+}
+
+
+static __attribute__((unused)) void compute_path_compute_fletcher(void* previous_blk_hash, zil_chain_t* zilc, \
+	abd_t *abd, zio_abd_checksum_data_t* acd, uint64_t size) {
+	// check if it is empty; there is no previous block
+	if (is_empty(previous_blk_hash) > 0) {
+		zfs_dbgmsg(" First block, there is no previous blk for blk_seqno=%llu\tsize=%llu\n", \
+			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+		// this is the original
+		abd_fletcher_4_impl(abd, size, acd);
+	}
+	else {
+		zfs_dbgmsg(" There is previous blk for blk_seqno=%llu\tsize=%llu\n", \
+			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+		void* acc_data = alloc_node(size + sizeof(zc_eck));
+		void* blk_content = alloc_node(size);
+	
+		// Todo: double-check those
+		abd_copy_to_buf(blk_content, abd, size);
+		memcpy(acc_data, blk_content, size);
+		memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
+		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
+		abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
+		abd_fletcher_4_impl(acc_hash, size + sizeof(zc_eck), acd);
+		free_node(acc_data, size + sizeof(zc_eck));
+		free_node(blk_content, size);
+		abd_free(acc_hash);
+	}
+}
+
+
+static int is_verification_path(zio_cksum_t *zcp) {
+	if ((zcp->zc_word[0] == 1) && (zcp->zc_word[1] == 1) && (zcp->zc_word[2] == 1) && (zcp->zc_word[3] == 1))
+		return 1;
+	return 0;
+}
+
+static __attribute__((unused)) void verify_path_compute_fletcher(void* previous_blk_hash, zil_chain_t* zilc,\
+	 abd_t *abd, zio_abd_checksum_data_t* acd, uint64_t size, zio_cksum_t* cur_block_cksum) {
+	// check if it is empty; there is no previous block
+	if (is_empty(previous_blk_hash) > 0) {
+		zfs_dbgmsg(" It should be the header, there is no previous blk for blk_seqno=%llu\tsize=%llu\n", \
+			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+
+		if (memcmp(cur_block_cksum->zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
+			zfs_dbgmsg(" zil headers match\n");
+		}
+		else {
+			zfs_dbgmsg( " ERROR, zil headers do not match!\n");
+		}
+		zc_eck first_val =  get_hash(&recovery_map, &(starting_blk_cmt->blk_num));
+		abd_fletcher_4_impl(abd, size, acd);
+		
+		// todo: maybe we also keep the previous blk digest as part of the zil header commitment to calculate the first one?
+		acd->acd_zcp->zc_word[0] = first_val.zc_word[0];
+		acd->acd_zcp->zc_word[1] = first_val.zc_word[1];
+		acd->acd_zcp->zc_word[2] = first_val.zc_word[2];
+		acd->acd_zcp->zc_word[3] = first_val.zc_word[3];
+		// todo: check that the computed hash equals the stored in the map (check the starting point is correct)
+	}
+	else {
+		zfs_dbgmsg(" It is a middle blk (or the tail), there is previous blk for blk_seqno=%llu\tsize=%llu\n", \
+			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+
+		void* acc_data = alloc_node(size + sizeof(zc_eck));
+		void* blk_content = alloc_node(size);
+	
+		// Todo: check those
+		abd_copy_to_buf(blk_content, abd, size);
+		memcpy(acc_data, blk_content, size);
+		memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
+		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
+		abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
+		abd_fletcher_4_impl(acc_hash, size + sizeof(zc_eck), acd);
+		free_node(acc_data, size + sizeof(zc_eck));
+		free_node(blk_content, size);
+		abd_free(acc_hash);
+
+		// todo: check that the tail is also ok
+		if (memcmp(final_blk_cmt->blk_num.zc_word, zilc->zc_eck.zec_cksum.zc_word, sizeof(zio_cksum_t)) == 0) {
+			zfs_dbgmsg( " This is the tail of the zil ...\n");
+			if (memcmp(acd->acd_zcp->zc_word, final_blk_cmt->blk_digest.zc_word, sizeof(final_blk_cmt->blk_digest)) == 0) {
+				zfs_dbgmsg( " zil hash-chain is verified ...\n");
+			}
+			else {
+				zfs_dbgmsg( " Error, zil hash-chain is *not* verified ...\n");
+			}
+		}
+	}
+	append_hash(&recovery_map, cur_block_cksum, (acd->acd_zcp), zilc->zc_next_blk.blk_birth);
+	print(&recovery_map);
+}
+
+
+static void verify_path_compute_fletcher_2(zil_chain_t* zilc, abd_t *abd,\
+	zio_abd_checksum_data_t* acd, uint64_t size, zio_cksum_t* cur_block_cksum) {
+	(void) zilc;
+	(void) cur_block_cksum;
+	abd_fletcher_4_impl(abd, size, acd);
+	ccf_state_cmp(&ccf_zil_commitments,\
+		acd->acd_zcp->zc_word); 
+}
+
+
+static __attribute__((unused)) void compute_path_compute_fletcher_2(zil_chain_t* zilc, \
+	abd_t *abd, zio_abd_checksum_data_t* acd, uint64_t size) {
+	(void) zilc;
+	abd_fletcher_4_impl(abd, size, acd);
+}
+
+
 void
-abd_fletcher_4_native(abd_t *abd, uint64_t size,
+abd_fletcher_4_native(abd_t *abd, uint64_t size, void* data_h, 
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	// @dimitra: is this executed in a single-threaded context? 
+	// I think there is a giant lock in the zio struct 
+	// which is held at the zil-commit time but maybe double-check again?
 	(void) ctx_template;
+	(void) size;
+	(void) data_h;
 	fletcher_4_ctx_t ctx;
 
 	zio_abd_checksum_data_t acd = {
@@ -140,15 +271,66 @@ abd_fletcher_4_native(abd_t *abd, uint64_t size,
 		.acd_zcp 	= zcp,
 		.acd_ctx	= &ctx
 	};
+	
+	zil_chain_t zilc;
+	abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
+	/*
+	zfs_dbgmsg(" seqno=%llu\tsize=%llu\tdata_h=%s\n", \
+		(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], \
+		(u_longlong_t) size, (char*)data_h);
+	*/
+	zfs_dbgmsg(" blk_seqno=%llu\tsize=%llu\n", (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+	zio_cksum_t cur_block_cksum = zilc.zc_eck.zec_cksum;
+	zio_cksum_t prev_block_cksum = cur_block_cksum;
+	prev_block_cksum.zc_word[ZIL_ZC_SEQ]--; // prev block has seqno that equals (blk_seqno-1)
 
-	abd_fletcher_4_impl(abd, size, &acd);
+	if (is_verification_path(zcp) == 1) {
+		zfs_dbgmsg(" [VERIFY path]\n");
+	#if 0
+		void* previous_blk_hash = get_serialized_hash(&recovery_map, &(prev_block_cksum));
+		verify_path_compute_fletcher(previous_blk_hash,  &zilc, abd, &acd, size, &cur_block_cksum);
+		release_hash(previous_blk_hash);
+	#endif
+		verify_path_compute_fletcher_2(&zilc, abd, &acd, size, &cur_block_cksum);
+		return;
+	}
+	else {
+		zfs_dbgmsg(" [COMPUTE path]\n");
+
+		#if 0
+		// we are on the compute path	
+		void* previous_blk_hash = get_serialized_hash(&cksum_map, &(prev_block_cksum));
+		compute_path_compute_fletcher(previous_blk_hash, &zilc, abd, &acd, size);
+		release_hash(previous_blk_hash);
+
+		zio_eck_t eck;
+		eck.zec_cksum = *(acd.acd_zcp);
+		abd_copy_to_buf(&zilc, abd, sizeof(zil_chain_t));
+
+		zfs_dbgmsg(" next_blk_seqno=%016llx:%016llx:%016llx:%016llx\tzc_eck=%016llx:%016llx:%016llx:%016llx\n size=%llu", \
+			(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1], \
+			(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[2], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[3], \
+			(u_longlong_t) eck.zec_cksum.zc_word[0], (u_longlong_t) eck.zec_cksum.zc_word[1], (u_longlong_t) eck.zec_cksum.zc_word[2], \
+			(u_longlong_t) eck.zec_cksum.zc_word[3], (u_longlong_t)size);
+		
+		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), zilc.zc_next_blk.blk_birth);
+		print(&cksum_map);
+		#endif 
+		compute_path_compute_fletcher_2(&zilc, abd, &acd, size);
+		zio_eck_t eck;
+		eck.zec_cksum = *(acd.acd_zcp);
+		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), zilc.zc_next_blk.blk_birth);
+		print(&cksum_map);
+
+	}
 
 }
 
 void
-abd_fletcher_4_byteswap(abd_t *abd, uint64_t size,
+abd_fletcher_4_byteswap(abd_t *abd, uint64_t size, void* data, 
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) data;
 	(void) ctx_template;
 	fletcher_4_ctx_t ctx;
 
@@ -161,17 +343,11 @@ abd_fletcher_4_byteswap(abd_t *abd, uint64_t size,
 	abd_fletcher_4_impl(abd, size, &acd);
 }
 
-/*
- * Checksum vectors.
- *
- * Note: you cannot change the name string for these functions, as they are
- * embedded in on-disk data in some places (eg dedup table names).
- */
 zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
-	{{NULL, NULL}, NULL, NULL, 0, "inherit"},
-	{{NULL, NULL}, NULL, NULL, 0, "on"},
+	{{NULL, NULL}, NULL, NULL,  0, "inherit"},
+	{{NULL, NULL}, NULL, NULL,  0, "on"},
 	{{abd_checksum_off,		abd_checksum_off},
-	    NULL, NULL, 0, "off"},
+	    NULL, NULL,  0, "off"},
 	{{abd_checksum_sha256,		abd_checksum_sha256},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_EMBEDDED,
 	    "label"},
@@ -179,23 +355,23 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_EMBEDDED,
 	    "gang_header"},
 	{{abd_fletcher_2_native,	abd_fletcher_2_byteswap},
-	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog"},
+	    NULL, NULL,  ZCHECKSUM_FLAG_EMBEDDED, "zilog"},
 	{{abd_fletcher_2_native,	abd_fletcher_2_byteswap},
-	    NULL, NULL, 0, "fletcher2"},
+	    NULL, NULL,  0, "fletcher2"},
 	{{abd_fletcher_4_native,	abd_fletcher_4_byteswap},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA, "fletcher4"},
 	{{abd_checksum_sha256,		abd_checksum_sha256},
-	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
+	    NULL, NULL,  ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
 	{{abd_fletcher_4_native,	abd_fletcher_4_byteswap},
-	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
+	    NULL, NULL,  ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{abd_checksum_off,		abd_checksum_off},
-	    NULL, NULL, 0, "noparity"},
+	    NULL, NULL,  0, "noparity"},
 	{{abd_checksum_sha512_native,	abd_checksum_sha512_byteswap},
-	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
+	    NULL, NULL,  ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha512"},
 	{{abd_checksum_skein_native,	abd_checksum_skein_byteswap},
-	    abd_checksum_skein_tmpl_init, abd_checksum_skein_tmpl_free,
+	    abd_checksum_skein_tmpl_init, abd_checksum_skein_tmpl_free, 
 	    ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_SALTED | ZCHECKSUM_FLAG_NOPWRITE, "skein"},
 	{{abd_checksum_edonr_native,	abd_checksum_edonr_byteswap},
@@ -203,7 +379,7 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	    ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_SALTED |
 	    ZCHECKSUM_FLAG_NOPWRITE, "edonr"},
 	{{abd_checksum_blake3_native,	abd_checksum_blake3_byteswap},
-	    abd_checksum_blake3_tmpl_init, abd_checksum_blake3_tmpl_free,
+	    abd_checksum_blake3_tmpl_init, abd_checksum_blake3_tmpl_free, 
 	    ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_SALTED | ZCHECKSUM_FLAG_NOPWRITE, "blake3"},
 };
@@ -279,7 +455,7 @@ static void
 zio_checksum_gang_verifier(zio_cksum_t *zcp, const blkptr_t *bp)
 {
 	const dva_t *dva = BP_IDENTITY(bp);
-	uint64_t txg = BP_GET_BIRTH(bp);
+	uint64_t txg = BP_PHYSICAL_BIRTH(bp);
 
 	ASSERT(BP_IS_GANG(bp));
 
@@ -343,6 +519,66 @@ zio_checksum_handle_crypt(zio_cksum_t *cksum, zio_cksum_t *saved, boolean_t xor)
 /*
  * Generate the checksum.
  */
+static void print_blk(const blkptr_t* bp) {
+	char type[256];
+	char buf[500];
+	const char *checksum = NULL;
+	const char *compress = NULL;
+
+	if (bp != NULL) {
+		if (BP_GET_TYPE(bp) & DMU_OT_NEWTYPE) {
+			dmu_object_byteswap_t bswap =
+			    DMU_OT_BYTESWAP(BP_GET_TYPE(bp));
+			(void) snprintf(type, sizeof (type), "bswap %s %s",
+			    DMU_OT_IS_METADATA(BP_GET_TYPE(bp)) ?
+			    "metadata" : "data",
+			    dmu_ot_byteswap[bswap].ob_name);
+		} else {
+			(void) strlcpy(type, dmu_ot[BP_GET_TYPE(bp)].ot_name,
+			    sizeof (type));
+		}
+		if (BP_IS_EMBEDDED(bp))
+			checksum = "BP_IS_EMBEDDED";
+		else 
+			checksum = "NOT EMBEDDED";
+		#if 0
+		if (!BP_IS_EMBEDDED(bp)) {
+			checksum =
+			    zio_checksum_table[BP_GET_CHECKSUM(bp)].ci_name;
+		}
+		#endif
+		compress = zio_compress_table[BP_GET_COMPRESS(bp)].ci_name;
+	}
+
+	SNPRINTF_BLKPTR(kmem_scnprintf, ' ', buf, 500, bp, type, checksum,
+	    compress);
+	zfs_dbgmsg("%s\n", buf);
+
+}
+
+#if 0
+[[__maybe_unused__]] int
+zil_prt_rec_write_cb(void *data, size_t len, void *unused)
+{
+	#define print_buf_sz  950
+	(void) unused;
+	char *cdata = data;
+	char tmp_buf[print_buf_sz];
+	len = MIN(len, print_buf_sz);
+	for (size_t i = 0; i < len; i++) {
+		if (isprint(*cdata)) {
+			tmp_buf[i] = *cdata;
+			// zfs_dbgmsg("%c ", *cdata);
+		}
+		else {
+			zfs_dbgmsg("%2X", *cdata);
+		}
+		cdata++;
+	}
+	zfs_dbgmsg(" %s\n", tmp_buf);
+	return (0);
+}
+#endif
 void
 zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
     abd_t *abd, uint64_t size)
@@ -354,7 +590,6 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 	zio_cksum_t cksum, saved;
 	spa_t *spa = zio->io_spa;
 	boolean_t insecure = (ci->ci_flags & ZCHECKSUM_FLAG_DEDUP) == 0;
-
 	ASSERT((uint_t)checksum < ZIO_CHECKSUM_FUNCTIONS);
 	ASSERT(ci->ci_func[0] != NULL);
 
@@ -369,7 +604,14 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		if (checksum == ZIO_CHECKSUM_ZILOG2) {
 			zil_chain_t zilc;
 			abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
+			zfs_dbgmsg(" zilc.zc_nused=%llu %s\n", (u_longlong_t)zilc.zc_nused, ci->ci_name);
+			zfs_dbgmsg(" zilc.zc_eck=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[0], \
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[1], (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[2], \
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[3]);
+			print_blk(zio->io_bp);
 
+			zfs_dbgmsg(" @dimitra: maybe this needs to be deleted %s\n", (char*)(zio->zil_block_content_hash));
+			
 			uint64_t nused = P2ROUNDUP_TYPED(zilc.zc_nused,
 			    ZIL_MIN_BLKSZ, uint64_t);
 			ASSERT3U(size, >=, nused);
@@ -384,12 +626,20 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		}
 
 		if (checksum == ZIO_CHECKSUM_GANG_HEADER) {
+			zfs_dbgmsg( " ZIO_CHECKSUM_GANG_HEADER\n");
 			zio_checksum_gang_verifier(&eck.zec_cksum, bp);
 		} else if (checksum == ZIO_CHECKSUM_LABEL) {
+			zfs_dbgmsg( " ZIO_CHECKSUM_LABEL\n");
 			zio_checksum_label_verifier(&eck.zec_cksum, offset);
 		} else {
 			saved = eck.zec_cksum;
 			eck.zec_cksum = bp->blk_cksum;
+			zfs_dbgmsg(" ZIO_CHECKSUM_ZILOG2 & ZCHECKSUM_FLAG_EMBEDDED, bp=%016llx:%016llx:%016llx:%016llx\n", \
+				(u_longlong_t)bp->blk_cksum.zc_word[0],\
+				(u_longlong_t)bp->blk_cksum.zc_word[1],\
+				(u_longlong_t)bp->blk_cksum.zc_word[2],\
+				(u_longlong_t)bp->blk_cksum.zc_word[3]
+			);
 		}
 
 		abd_copy_from_buf_off(abd, &zec_magic,
@@ -399,18 +649,25 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		    eck_offset + offsetof(zio_eck_t, zec_cksum),
 		    sizeof (zio_cksum_t));
 
-		ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+		ci->ci_func[0](abd, size, (zio->zil_block_content_hash), spa->spa_cksum_tmpls[checksum],
 		    &cksum);
+		if (zio->zil_block_content_hash) {
+			free_node(zio->zil_block_content_hash, ZIL_BLOCK_CONTENT_H_SIZE);
+		}
+		//zfs_dbgmsg(" finished calculation\n");
 		if (bp != NULL && BP_USES_CRYPT(bp) &&
 		    BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);
 
+		// zfs_dbgmsg(" before copy\n");
+
 		abd_copy_from_buf_off(abd, &cksum,
 		    eck_offset + offsetof(zio_eck_t, zec_cksum),
 		    sizeof (zio_cksum_t));
+		// zfs_dbgmsg(" after copy\n");
 	} else {
 		saved = bp->blk_cksum;
-		ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+		ci->ci_func[0](abd, size, NULL, spa->spa_cksum_tmpls[checksum],
 		    &cksum);
 		if (BP_USES_CRYPT(bp) && BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);
@@ -443,10 +700,40 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		if (checksum == ZIO_CHECKSUM_ZILOG2) {
 			zil_chain_t zilc;
 			uint64_t nused;
-
+			// this is set to enable the verification path
+			actual_cksum.zc_word[0] = 1;
+			actual_cksum.zc_word[1] = 1;
+			actual_cksum.zc_word[2] = 1;
+			actual_cksum.zc_word[3] = 1;
 			abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
+			
 
 			eck = zilc.zc_eck;
+			
+			// this can be removed later on; it is for my own checking.
+			void* previous_blk_hash = get_serialized_hash(&cksum_map, &(bp->blk_cksum));
+			if (memcmp(eck.zec_cksum.zc_word, previous_blk_hash, sizeof(eck.zec_cksum)) != 0) {
+				zfs_dbgmsg(" error, checksums do not match\n");
+			}
+			zc_eck value;
+			value.zc_word[0] = 0;
+			value.zc_word[1] = 0;
+			value.zc_word[2] = 0;
+			value.zc_word[3] = 0; // return an empty value if not found
+			memcpy(&(value.zc_word[0]), previous_blk_hash, sizeof(value.zc_word[0]));
+			memcpy(&(value.zc_word[1]), previous_blk_hash + sizeof(value.zc_word[0]), sizeof(value.zc_word[0]));
+			memcpy(&(value.zc_word[2]), previous_blk_hash + 2*sizeof(value.zc_word[0]), sizeof(value.zc_word[0]));
+			memcpy(&(value.zc_word[3]), previous_blk_hash + 3*sizeof(value.zc_word[0]), sizeof(value.zc_word[0]));
+
+			zfs_dbgmsg(" abd_size=%llu, blk_cksum=%016llx:%016llx:%016llx:%016llx\tzc_eck=%016llx:%016llx:%016llx:%016llx\tprevious_blk_hash=%016llx:%016llx:%016llx:%016llx\n", \
+				(u_longlong_t)abd->abd_size,\
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1],\
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[2], ((u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[3]-1),\
+				(u_longlong_t) eck.zec_cksum.zc_word[0], (u_longlong_t) eck.zec_cksum.zc_word[1],\
+				(u_longlong_t) eck.zec_cksum.zc_word[2], (u_longlong_t) eck.zec_cksum.zc_word[3],
+				(u_longlong_t) value.zc_word[0], (u_longlong_t) value.zc_word[1], (u_longlong_t) value.zc_word[2], (u_longlong_t) value.zc_word[3]);
+			zfs_dbgmsg(" bp->blk_cksum=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)bp->blk_cksum.zc_word[0], (u_longlong_t)bp->blk_cksum.zc_word[1], (u_longlong_t)bp->blk_cksum.zc_word[2], ((u_longlong_t)bp->blk_cksum.zc_word[3]));
+			release_hash(previous_blk_hash);
 			eck_offset = offsetof(zil_chain_t, zc_eck) +
 			    offsetof(zio_eck_t, zec_cksum);
 
@@ -488,7 +775,8 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		abd_copy_from_buf_off(abd, &verifier, eck_offset,
 		    sizeof (zio_cksum_t));
 
-		ci->ci_func[byteswap](abd, size,
+		
+		ci->ci_func[byteswap](abd, size, NULL,
 		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
 
 		abd_copy_from_buf_off(abd, &expected_cksum, eck_offset,
@@ -501,7 +789,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 	} else {
 		byteswap = BP_SHOULD_BYTESWAP(bp);
 		expected_cksum = bp->blk_cksum;
-		ci->ci_func[byteswap](abd, size,
+		ci->ci_func[byteswap](abd, size, NULL,
 		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
 	}
 
@@ -532,8 +820,15 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		info->zbc_has_cksum = 1;
 	}
 
-	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
+	zfs_dbgmsg(" actual_cksum=%016llx:%016llx:%016llx:%016llx\texpected_cksum=%016llx:%016llx:%016llx:%016llx\n", \
+		(u_longlong_t) actual_cksum.zc_word[0], (u_longlong_t) actual_cksum.zc_word[1], \
+		(u_longlong_t) actual_cksum.zc_word[2], ((u_longlong_t) actual_cksum.zc_word[3]), \
+		(u_longlong_t) expected_cksum.zc_word[0], (u_longlong_t) expected_cksum.zc_word[1], (u_longlong_t) expected_cksum.zc_word[2], (u_longlong_t) expected_cksum.zc_word[3]);
+
+	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum)) {
+		zfs_dbgmsg(" actual_cksum != expected_cksum\n");
 		return (SET_ERROR(ECKSUM));
+	}
 
 	return (0);
 }

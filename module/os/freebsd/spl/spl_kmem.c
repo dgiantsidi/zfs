@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright (c) 2006-2007 Pawel Jakub Dawidek <pjd@FreeBSD.org>
  * All rights reserved.
@@ -24,6 +23,9 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+
+#include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -241,14 +243,22 @@ void
 kmem_cache_reap_soon(kmem_cache_t *cache)
 {
 #ifndef KMEM_DEBUG
+#if __FreeBSD_version >= 1300043
 	uma_zone_reclaim(cache->kc_zone, UMA_RECLAIM_DRAIN);
+#else
+	zone_drain(cache->kc_zone);
+#endif
 #endif
 }
 
 void
 kmem_reap(void)
 {
+#if __FreeBSD_version >= 1300043
 	uma_reclaim(UMA_RECLAIM_TRIM);
+#else
+	uma_reclaim();
+#endif
 }
 #else
 void

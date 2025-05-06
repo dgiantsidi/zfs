@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: OpenSSL-standalone
 /*
  * ====================================================================
  * Written by Intel Corporation for the OpenSSL project to add support

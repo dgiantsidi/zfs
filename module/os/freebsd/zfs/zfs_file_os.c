@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright (c) 2020 iXsystems, Inc.
  * All rights reserved.
@@ -25,6 +24,9 @@
  * SUCH DAMAGE.
  *
  */
+
+#include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/dmu.h>
 #include <sys/dmu_impl.h>
@@ -271,7 +273,7 @@ zfs_vop_fsync(vnode_t *vp)
 		goto drop;
 	vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	error = VOP_FSYNC(vp, MNT_WAIT, curthread);
-	VOP_UNLOCK(vp);
+	VOP_UNLOCK1(vp);
 	vn_finished_write(mp);
 drop:
 	return (SET_ERROR(error));
@@ -284,32 +286,6 @@ zfs_file_fsync(zfs_file_t *fp, int flags)
 		return (EINVAL);
 
 	return (zfs_vop_fsync(fp->f_vnode));
-}
-
-/*
- * deallocate - zero and/or deallocate file storage
- *
- * fp - file pointer
- * offset - offset to start zeroing or deallocating
- * len - length to zero or deallocate
- */
-int
-zfs_file_deallocate(zfs_file_t *fp, loff_t offset, loff_t len)
-{
-	int rc;
-#if __FreeBSD_version >= 1400029
-	struct thread *td;
-
-	td = curthread;
-	rc = fo_fspacectl(fp, SPACECTL_DEALLOC, &offset, &len, 0,
-	    td->td_ucred, td);
-#else
-	(void) fp, (void) offset, (void) len;
-	rc = EOPNOTSUPP;
-#endif
-	if (rc)
-		return (SET_ERROR(rc));
-	return (0);
 }
 
 zfs_file_t *
@@ -357,6 +333,14 @@ zfs_file_unlink(const char *fnamep)
 	zfs_uio_seg_t seg = UIO_SYSSPACE;
 	int rc;
 
+#if __FreeBSD_version >= 1300018
 	rc = kern_funlinkat(curthread, AT_FDCWD, fnamep, FD_NONE, seg, 0, 0);
+#elif __FreeBSD_version >= 1202504 || defined(AT_BENEATH)
+	rc = kern_unlinkat(curthread, AT_FDCWD, __DECONST(char *, fnamep),
+	    seg, 0, 0);
+#else
+	rc = kern_unlinkat(curthread, AT_FDCWD, __DECONST(char *, fnamep),
+	    seg, 0);
+#endif
 	return (SET_ERROR(rc));
 }

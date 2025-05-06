@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -46,9 +45,8 @@
 #define	OFFSET_MASK	((1 << (16 - MATCH_BITS)) - 1)
 #define	LEMPEL_SIZE	1024
 
-static size_t
-zfs_lzjb_compress_buf(void *s_start, void *d_start, size_t s_len,
-    size_t d_len, int n)
+size_t
+lzjb_compress(void *s_start, void *d_start, size_t s_len, size_t d_len, int n)
 {
 	(void) n;
 	uchar_t *src = s_start;
@@ -102,9 +100,8 @@ zfs_lzjb_compress_buf(void *s_start, void *d_start, size_t s_len,
 	return (dst - (uchar_t *)d_start);
 }
 
-static int
-zfs_lzjb_decompress_buf(void *s_start, void *d_start,
-    size_t s_len, size_t d_len, int n)
+int
+lzjb_decompress(void *s_start, void *d_start, size_t s_len, size_t d_len, int n)
 {
 	(void) s_len, (void) n;
 	uchar_t *src = s_start;
@@ -133,6 +130,3 @@ zfs_lzjb_decompress_buf(void *s_start, void *d_start,
 	}
 	return (0);
 }
-
-ZFS_COMPRESS_WRAP_DECL(zfs_lzjb_compress)
-ZFS_DECOMPRESS_WRAP_DECL(zfs_lzjb_decompress)

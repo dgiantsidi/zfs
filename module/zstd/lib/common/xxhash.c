@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
 /*
  *  xxHash - Fast Hash algorithm
  *  Copyright (c) 2012-2020, Yann Collet, Facebook, Inc.

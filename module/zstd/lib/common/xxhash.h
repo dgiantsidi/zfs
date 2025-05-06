@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
 /*
  * xxHash - Extremely Fast Hash algorithm
  * Header File

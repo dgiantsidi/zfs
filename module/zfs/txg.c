@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -112,7 +111,7 @@
 static __attribute__((noreturn)) void txg_sync_thread(void *arg);
 static __attribute__((noreturn)) void txg_quiesce_thread(void *arg);
 
-uint_t zfs_txg_timeout = 5;	/* max seconds worth of delta per txg */
+uint_t zfs_txg_timeout = 50; //original=5;	/* max seconds worth of delta per txg */
 
 /*
  * Prepare the txg subsystem.
@@ -196,6 +195,7 @@ txg_fini(dsl_pool_t *dp)
 void
 txg_sync_start(dsl_pool_t *dp)
 {
+	zfs_dbgmsg("\n");
 	tx_state_t *tx = &dp->dp_tx;
 
 	mutex_enter(&tx->tx_sync_lock);
@@ -391,6 +391,8 @@ txg_quiesce(dsl_pool_t *dp, uint64_t txg)
 	int g = txg & TXG_MASK;
 	int c;
 
+	// zfs_dbgmsg(" tx_open_txg=%llu and txg=%llu\n", (u_longlong_t)tx->tx_open_txg, (u_longlong_t)txg);
+
 	/*
 	 * Grab all tc_open_locks so nobody else can get into this txg.
 	 */
@@ -398,6 +400,8 @@ txg_quiesce(dsl_pool_t *dp, uint64_t txg)
 		mutex_enter(&tx->tx_cpu[c].tc_open_lock);
 
 	ASSERT(txg == tx->tx_open_txg);
+	// zfs_dbgmsg(" tx_open_txg=%llu\n", (u_longlong_t)tx->tx_open_txg);
+
 	tx->tx_open_txg++;
 	tx->tx_open_time = tx_open_time = gethrtime();
 
@@ -518,6 +522,8 @@ txg_has_quiesced_to_sync(dsl_pool_t *dp)
 static __attribute__((noreturn)) void
 txg_sync_thread(void *arg)
 {
+	zfs_dbgmsg("\n");
+
 	dsl_pool_t *dp = arg;
 	spa_t *spa = dp->dp_spa;
 	tx_state_t *tx = &dp->dp_tx;
@@ -549,6 +555,15 @@ txg_sync_thread(void *arg)
 			txg_thread_wait(tx, &cpr, &tx->tx_sync_more_cv, timer);
 			delta = ddi_get_lbolt() - start;
 			timer = (delta > timeout ? 0 : timeout - delta);
+			{
+				char buffer[512];
+				memset(buffer, '\0', 512);
+				snprintf(buffer, sizeof(buffer), "waiting; tx_synced=%llu waiting=%llu dp=%p\n",
+			    	(u_longlong_t)tx->tx_synced_txg,
+			    	(u_longlong_t)tx->tx_sync_txg_waiting, dp);
+				zfs_dbgmsg(": %s\n", buffer);
+
+			}
 		}
 
 		/*
@@ -576,8 +591,9 @@ txg_sync_thread(void *arg)
 			txg_thread_wait(tx, &cpr, &tx->tx_quiesce_done_cv, 0);
 		}
 
-		if (tx->tx_exiting)
+		if (tx->tx_exiting) {
 			txg_thread_exit(tx, &cpr, &tx->tx_sync_thread);
+		}
 
 		/*
 		 * Consume the quiesced txg which has been handed off to
@@ -594,10 +610,18 @@ txg_sync_thread(void *arg)
 		dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 		    (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
 		    (u_longlong_t)tx->tx_sync_txg_waiting);
+		char buffer[512];
+		memset(buffer, '\0', 512);
+		snprintf(buffer, sizeof(buffer), "txg=%llu quiesce_txg=%llu sync_txg=%llu tx_open_txg=%llu\n",
+         	(u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
+         	(u_longlong_t)tx->tx_sync_txg_waiting, (u_longlong_t)tx->tx_open_txg);
+
 		mutex_exit(&tx->tx_sync_lock);
 
 		txg_stat_t *ts = spa_txg_history_init_io(spa, txg, dp);
 		start = ddi_get_lbolt();
+		zfs_dbgmsg(": %s\n", buffer);
+
 		spa_sync(spa, txg);
 		delta = ddi_get_lbolt() - start;
 		spa_txg_history_fini_io(spa, ts);
@@ -647,6 +671,13 @@ txg_quiesce_thread(void *arg)
 		    (u_longlong_t)txg,
 		    (u_longlong_t)tx->tx_quiesce_txg_waiting,
 		    (u_longlong_t)tx->tx_sync_txg_waiting);
+		char buffer[512];
+		memset(buffer, '\0', 512);
+		snprintf(buffer, sizeof(buffer), "txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+		    (u_longlong_t)txg,
+		    (u_longlong_t)tx->tx_quiesce_txg_waiting,
+		    (u_longlong_t)tx->tx_sync_txg_waiting);
+		zfs_dbgmsg( " %s\n", buffer);
 		tx->tx_quiescing_txg = txg;
 
 		mutex_exit(&tx->tx_sync_lock);
@@ -702,21 +733,30 @@ txg_delay(dsl_pool_t *dp, uint64_t txg, hrtime_t delay, hrtime_t resolution)
 static boolean_t
 txg_wait_synced_impl(dsl_pool_t *dp, uint64_t txg, boolean_t wait_sig)
 {
+	
+
 	tx_state_t *tx = &dp->dp_tx;
 
 	ASSERT(!dsl_pool_config_held(dp));
 
 	mutex_enter(&tx->tx_sync_lock);
 	ASSERT3U(tx->tx_threads, ==, 2);
-	if (txg == 0)
+	if (txg == 0) 
 		txg = tx->tx_open_txg + TXG_DEFER_SIZE;
 	if (tx->tx_sync_txg_waiting < txg)
 		tx->tx_sync_txg_waiting = txg;
 	dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 	    (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
 	    (u_longlong_t)tx->tx_sync_txg_waiting);
+	zfs_dbgmsg(" txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+	    (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
+	    (u_longlong_t)tx->tx_sync_txg_waiting);
 	while (tx->tx_synced_txg < txg) {
 		dprintf("broadcasting sync more "
+		    "tx_synced=%llu waiting=%llu dp=%px\n",
+		    (u_longlong_t)tx->tx_synced_txg,
+		    (u_longlong_t)tx->tx_sync_txg_waiting, dp);
+		zfs_dbgmsg(" broadcasting sync more "
 		    "tx_synced=%llu waiting=%llu dp=%px\n",
 		    (u_longlong_t)tx->tx_synced_txg,
 		    (u_longlong_t)tx->tx_sync_txg_waiting, dp);
@@ -763,6 +803,7 @@ txg_wait_synced_sig(dsl_pool_t *dp, uint64_t txg)
 void
 txg_wait_open(dsl_pool_t *dp, uint64_t txg, boolean_t should_quiesce)
 {
+	zfs_dbgmsg("  txg=%llu\n", (u_longlong_t)txg);
 	tx_state_t *tx = &dp->dp_tx;
 
 	ASSERT(!dsl_pool_config_held(dp));
@@ -776,6 +817,12 @@ txg_wait_open(dsl_pool_t *dp, uint64_t txg, boolean_t should_quiesce)
 	dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 	    (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
 	    (u_longlong_t)tx->tx_sync_txg_waiting);
+	{
+		char buffer[512];
+		snprintf(buffer, sizeof(buffer), "txg=%llu quiesce_txg=%llu sync_txg=%llu", (u_longlong_t)txg, (u_longlong_t)tx->tx_quiesce_txg_waiting,
+	    (u_longlong_t)tx->tx_sync_txg_waiting);
+		zfs_dbgmsg(" : %s\n", buffer);
+	}
 	while (tx->tx_open_txg < txg) {
 		cv_broadcast(&tx->tx_quiesce_more_cv);
 		/*
@@ -800,6 +847,8 @@ txg_wait_open(dsl_pool_t *dp, uint64_t txg, boolean_t should_quiesce)
 void
 txg_kick(dsl_pool_t *dp, uint64_t txg)
 {
+	zfs_dbgmsg("  txg=%llu\n", (u_longlong_t)txg);
+
 	tx_state_t *tx = &dp->dp_tx;
 
 	ASSERT(!dsl_pool_config_held(dp));
@@ -827,6 +876,9 @@ txg_sync_waiting(dsl_pool_t *dp)
 {
 	tx_state_t *tx = &dp->dp_tx;
 
+	char buffer[512];
+	snprintf(buffer, sizeof(buffer), "tx->tx_syncing_txg=%llu tx->tx_sync_txg_waiting=%llu\n", (u_longlong_t)tx->tx_syncing_txg, (u_longlong_t)tx->tx_sync_txg_waiting);
+	zfs_dbgmsg(" : %s\n", buffer);
 	return (tx->tx_syncing_txg <= tx->tx_sync_txg_waiting ||
 	    tx->tx_quiesced_txg != 0);
 }
@@ -855,6 +907,7 @@ void
 txg_list_create(txg_list_t *tl, spa_t *spa, size_t offset)
 {
 	int t;
+	zfs_dbgmsg(" offset=%llu\n", (u_longlong_t) offset);
 
 	mutex_init(&tl->tl_lock, NULL, MUTEX_DEFAULT, NULL);
 

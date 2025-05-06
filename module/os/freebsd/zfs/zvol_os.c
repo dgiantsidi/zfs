@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -31,7 +30,6 @@
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright (c) 2024, Klara, Inc.
  */
 
 /* Portions Copyright 2011 Martin Matuska <mm@FreeBSD.org> */
@@ -125,6 +123,7 @@ struct zvol_state_os {
 		/* volmode=dev */
 		struct zvol_state_dev {
 			struct cdev *zsd_cdev;
+			uint64_t zsd_sync_cnt;
 			struct selinfo zsd_selinfo;
 		} _zso_dev;
 
@@ -252,7 +251,7 @@ retry:
 	}
 
 	mutex_enter(&zv->zv_state_lock);
-	if (zv->zv_zso->zso_dying || zv->zv_flags & ZVOL_REMOVING) {
+	if (zv->zv_zso->zso_dying) {
 		rw_exit(&zvol_state_lock);
 		err = SET_ERROR(ENXIO);
 		goto out_zv_locked;
@@ -294,7 +293,6 @@ retry:
 			if (!mutex_tryenter(&spa_namespace_lock)) {
 				mutex_exit(&zv->zv_state_lock);
 				rw_exit(&zv->zv_suspend_lock);
-				drop_suspend = B_FALSE;
 				kern_yield(PRI_USER);
 				goto retry;
 			} else {
@@ -671,7 +669,7 @@ zvol_geom_bio_strategy(struct bio *bp)
 	int error = 0;
 	boolean_t doread = B_FALSE;
 	boolean_t is_dumpified;
-	boolean_t commit;
+	boolean_t sync;
 
 	if (bp->bio_to)
 		zv = bp->bio_to->private;
@@ -684,11 +682,6 @@ zvol_geom_bio_strategy(struct bio *bp)
 	}
 
 	rw_enter(&zv->zv_suspend_lock, ZVOL_RW_READER);
-
-	if (zv->zv_flags & ZVOL_REMOVING) {
-		error = SET_ERROR(ENXIO);
-		goto resume;
-	}
 
 	switch (bp->bio_cmd) {
 	case BIO_READ:
@@ -703,7 +696,7 @@ zvol_geom_bio_strategy(struct bio *bp)
 		}
 		zvol_ensure_zilog(zv);
 		if (bp->bio_cmd == BIO_FLUSH)
-			goto commit;
+			goto sync;
 		break;
 	default:
 		error = SET_ERROR(EOPNOTSUPP);
@@ -725,7 +718,7 @@ zvol_geom_bio_strategy(struct bio *bp)
 	}
 
 	is_dumpified = B_FALSE;
-	commit = !doread && !is_dumpified &&
+	sync = !doread && !is_dumpified &&
 	    zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS;
 
 	/*
@@ -737,11 +730,11 @@ zvol_geom_bio_strategy(struct bio *bp)
 
 	if (bp->bio_cmd == BIO_DELETE) {
 		dmu_tx_t *tx = dmu_tx_create(zv->zv_objset);
-		error = dmu_tx_assign(tx, DMU_TX_WAIT);
+		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error != 0) {
 			dmu_tx_abort(tx);
 		} else {
-			zvol_log_truncate(zv, tx, off, resid);
+			zvol_log_truncate(zv, tx, off, resid, sync);
 			dmu_tx_commit(tx);
 			error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ,
 			    off, resid);
@@ -757,12 +750,12 @@ zvol_geom_bio_strategy(struct bio *bp)
 		} else {
 			dmu_tx_t *tx = dmu_tx_create(os);
 			dmu_tx_hold_write_by_dnode(tx, zv->zv_dn, off, size);
-			error = dmu_tx_assign(tx, DMU_TX_WAIT);
+			error = dmu_tx_assign(tx, TXG_WAIT);
 			if (error) {
 				dmu_tx_abort(tx);
 			} else {
 				dmu_write(os, ZVOL_OBJ, off, size, addr, tx);
-				zvol_log_write(zv, tx, off, size, commit);
+				zvol_log_write(zv, tx, off, size, sync);
 				dmu_tx_commit(tx);
 			}
 		}
@@ -800,8 +793,8 @@ unlock:
 		break;
 	}
 
-	if (commit) {
-commit:
+	if (sync) {
+sync:
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	}
 resume:
@@ -873,7 +866,7 @@ zvol_cdev_write(struct cdev *dev, struct uio *uio_s, int ioflag)
 	uint64_t volsize;
 	zfs_locked_range_t *lr;
 	int error = 0;
-	boolean_t commit;
+	boolean_t sync;
 	zfs_uio_t uio;
 
 	zv = dev->si_drv2;
@@ -887,7 +880,7 @@ zvol_cdev_write(struct cdev *dev, struct uio *uio_s, int ioflag)
 		return (SET_ERROR(EIO));
 
 	ssize_t start_resid = zfs_uio_resid(&uio);
-	commit = (ioflag & IO_SYNC) ||
+	sync = (ioflag & IO_SYNC) ||
 	    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
 
 	rw_enter(&zv->zv_suspend_lock, ZVOL_RW_READER);
@@ -904,14 +897,14 @@ zvol_cdev_write(struct cdev *dev, struct uio *uio_s, int ioflag)
 			bytes = volsize - off;
 
 		dmu_tx_hold_write_by_dnode(tx, zv->zv_dn, off, bytes);
-		error = dmu_tx_assign(tx, DMU_TX_WAIT);
+		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
 			break;
 		}
 		error = dmu_write_uio_dnode(zv->zv_dn, &uio, bytes, tx);
 		if (error == 0)
-			zvol_log_write(zv, tx, off, bytes, commit);
+			zvol_log_write(zv, tx, off, bytes, sync);
 		dmu_tx_commit(tx);
 
 		if (error)
@@ -920,10 +913,9 @@ zvol_cdev_write(struct cdev *dev, struct uio *uio_s, int ioflag)
 	zfs_rangelock_exit(lr);
 	int64_t nwritten = start_resid - zfs_uio_resid(&uio);
 	dataset_kstats_update_write_kstats(&zv->zv_kstat, nwritten);
-	if (commit)
+	if (sync)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	rw_exit(&zv->zv_suspend_lock);
-
 	return (error);
 }
 
@@ -931,6 +923,7 @@ static int
 zvol_cdev_open(struct cdev *dev, int flags, int fmt, struct thread *td)
 {
 	zvol_state_t *zv;
+	struct zvol_state_dev *zsd;
 	int err = 0;
 	boolean_t drop_suspend = B_FALSE;
 
@@ -992,7 +985,6 @@ retry:
 			if (!mutex_tryenter(&spa_namespace_lock)) {
 				mutex_exit(&zv->zv_state_lock);
 				rw_exit(&zv->zv_suspend_lock);
-				drop_suspend = B_FALSE;
 				kern_yield(PRI_USER);
 				goto retry;
 			} else {
@@ -1025,6 +1017,13 @@ retry:
 	}
 
 	zv->zv_open_count++;
+	if (flags & O_SYNC) {
+		zsd = &zv->zv_zso->zso_dev;
+		zsd->zsd_sync_cnt++;
+		if (zsd->zsd_sync_cnt == 1 &&
+		    (zv->zv_flags & ZVOL_WRITTEN_TO) != 0)
+			zil_async_to_sync(zv->zv_zilog, ZVOL_OBJ);
+	}
 out_opened:
 	if (zv->zv_open_count == 0) {
 		zvol_last_close(zv);
@@ -1042,6 +1041,7 @@ static int
 zvol_cdev_close(struct cdev *dev, int flags, int fmt, struct thread *td)
 {
 	zvol_state_t *zv;
+	struct zvol_state_dev *zsd;
 	boolean_t drop_suspend = B_TRUE;
 
 	rw_enter(&zvol_state_lock, ZVOL_RW_READER);
@@ -1091,6 +1091,10 @@ zvol_cdev_close(struct cdev *dev, int flags, int fmt, struct thread *td)
 	 * You may get multiple opens, but only one close.
 	 */
 	zv->zv_open_count--;
+	if (flags & O_SYNC) {
+		zsd = &zv->zv_zso->zso_dev;
+		zsd->zsd_sync_cnt--;
+	}
 
 	if (zv->zv_open_count == 0) {
 		ASSERT(ZVOL_RW_READ_HELD(&zv->zv_suspend_lock));
@@ -1153,13 +1157,13 @@ zvol_cdev_ioctl(struct cdev *dev, ulong_t cmd, caddr_t data,
 		lr = zfs_rangelock_enter(&zv->zv_rangelock, offset, length,
 		    RL_WRITER);
 		dmu_tx_t *tx = dmu_tx_create(zv->zv_objset);
-		error = dmu_tx_assign(tx, DMU_TX_WAIT);
+		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error != 0) {
 			sync = FALSE;
 			dmu_tx_abort(tx);
 		} else {
 			sync = (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
-			zvol_log_truncate(zv, tx, offset, length);
+			zvol_log_truncate(zv, tx, offset, length, sync);
 			dmu_tx_commit(tx);
 			error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ,
 			    offset, length);
@@ -1320,7 +1324,11 @@ zvol_os_rename_minor(zvol_state_t *zv, const char *newname)
 		args.mda_si_drv2 = zv;
 		if (make_dev_s(&args, &dev, "%s/%s", ZVOL_DRIVER, newname)
 		    == 0) {
+#if __FreeBSD_version > 1300130
 			dev->si_iosize_max = maxphys;
+#else
+			dev->si_iosize_max = MAXPHYS;
+#endif
 			zsd->zsd_cdev = dev;
 		}
 	}
@@ -1366,7 +1374,6 @@ zvol_os_free(zvol_state_t *zv)
 	}
 
 	mutex_destroy(&zv->zv_state_lock);
-	cv_destroy(&zv->zv_removing_cv);
 	dataset_kstats_destroy(&zv->zv_kstat);
 	kmem_free(zv->zv_zso, sizeof (struct zvol_state_os));
 	kmem_free(zv, sizeof (zvol_state_t));
@@ -1424,7 +1431,6 @@ zvol_os_create_minor(const char *name)
 	zv = kmem_zalloc(sizeof (*zv), KM_SLEEP);
 	zv->zv_hash = hash;
 	mutex_init(&zv->zv_state_lock, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&zv->zv_removing_cv, NULL, CV_DEFAULT, NULL);
 	zv->zv_zso = kmem_zalloc(sizeof (struct zvol_state_os), KM_SLEEP);
 	zv->zv_volmode = volmode;
 	if (zv->zv_volmode == ZFS_VOLMODE_GEOM) {
@@ -1462,7 +1468,11 @@ zvol_os_create_minor(const char *name)
 		args.mda_si_drv2 = zv;
 		if (make_dev_s(&args, &dev, "%s/%s", ZVOL_DRIVER, name)
 		    == 0) {
+#if __FreeBSD_version > 1300130
 			dev->si_iosize_max = maxphys;
+#else
+			dev->si_iosize_max = MAXPHYS;
+#endif
 			zsd->zsd_cdev = dev;
 			knlist_init_sx(&zsd->zsd_selinfo.si_note,
 			    &zv->zv_state_lock);

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: LicenseRef-OpenZFS-ThirdParty-PublicDomain
 /*
  * Xorshift Pseudo Random Number Generator based on work by David Blackman
  * and Sebastiano Vigna (vigna@acm.org).

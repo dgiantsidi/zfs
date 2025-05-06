@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -74,18 +73,34 @@ static int traverse_dnode(traverse_data_t *td, const blkptr_t *bp,
 static void prefetch_dnode_metadata(traverse_data_t *td, const dnode_phys_t *,
     uint64_t objset, uint64_t object);
 
+static int plog_block (const blkptr_t *bp) {
+
+	char blkbuf[BP_SPRINTF_LEN + 10];
+	
+	strcpy(blkbuf, ", ");
+	snprintf_blkptr(blkbuf + strlen(blkbuf),
+			sizeof (blkbuf) - strlen(blkbuf), bp);
+
+	zfs_dbgmsg("\t bp=%p, block seqno %llu, txg=%llu %s\n", (void*)bp,
+		(u_longlong_t)bp->blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)bp->blk_birth, blkbuf);
+
+	return (0);
+}
+
 static int
 traverse_zil_block(zilog_t *zilog, const blkptr_t *bp, void *arg,
     uint64_t claim_txg)
 {
+
 	traverse_data_t *td = arg;
 	zbookmark_phys_t zb;
+	zfs_dbgmsg("\n");
+	plog_block(bp);
 
 	if (BP_IS_HOLE(bp))
 		return (0);
 
-	if (claim_txg == 0 &&
-	    BP_GET_LOGICAL_BIRTH(bp) >= spa_min_claim_txg(td->td_spa))
+	if (claim_txg == 0 && bp->blk_birth >= spa_min_claim_txg(td->td_spa))
 		return (-1);
 
 	SET_BOOKMARK(&zb, td->td_objset, ZB_ZIL_OBJECT, ZB_ZIL_LEVEL,
@@ -110,7 +125,7 @@ traverse_zil_record(zilog_t *zilog, const lr_t *lrc, void *arg,
 		if (BP_IS_HOLE(bp))
 			return (0);
 
-		if (claim_txg == 0 || BP_GET_LOGICAL_BIRTH(bp) < claim_txg)
+		if (claim_txg == 0 || bp->blk_birth < claim_txg)
 			return (0);
 
 		ASSERT3U(BP_GET_LSIZE(bp), !=, 0);
@@ -127,7 +142,7 @@ static void
 traverse_zil(traverse_data_t *td, zil_header_t *zh)
 {
 	uint64_t claim_txg = zh->zh_claim_txg;
-
+	zfs_dbgmsg(" claim_txg=%llu\n", (u_longlong_t)claim_txg);
 	/*
 	 * We only want to visit blocks that have been claimed but not yet
 	 * replayed; plus blocks that are already stable in read-only mode.
@@ -194,7 +209,7 @@ traverse_prefetch_metadata(traverse_data_t *td, const dnode_phys_t *dnp,
 	 */
 	if (resume_skip_check(td, dnp, zb) != RESUME_SKIP_NONE)
 		return (B_FALSE);
-	if (BP_IS_HOLE(bp) || BP_GET_LOGICAL_BIRTH(bp) <= td->td_min_txg)
+	if (BP_IS_HOLE(bp) || bp->blk_birth <= td->td_min_txg)
 		return (B_FALSE);
 	if (BP_GET_LEVEL(bp) == 0 && BP_GET_TYPE(bp) != DMU_OT_DNODE)
 		return (B_FALSE);
@@ -237,7 +252,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		ASSERT(0);
 	}
 
-	if (BP_GET_LOGICAL_BIRTH(bp) == 0) {
+	if (bp->blk_birth == 0) {
 		/*
 		 * Since this block has a birth time of 0 it must be one of
 		 * two things: a hole created before the
@@ -265,7 +280,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		    zb->zb_object == DMU_META_DNODE_OBJECT) &&
 		    td->td_hole_birth_enabled_txg <= td->td_min_txg)
 			return (0);
-	} else if (BP_GET_LOGICAL_BIRTH(bp) <= td->td_min_txg) {
+	} else if (bp->blk_birth <= td->td_min_txg) {
 		return (0);
 	}
 
@@ -819,5 +834,6 @@ MODULE_PARM_DESC(ignore_hole_birth,
 	"Alias for send_holes_without_birth_time");
 #endif
 
+/* CSTYLED */
 ZFS_MODULE_PARAM(zfs, , send_holes_without_birth_time, INT, ZMOD_RW,
 	"Ignore hole_birth txg for zfs send");

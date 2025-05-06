@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: CDDL-1.0
 /*
  * CDDL HEADER START
  *
@@ -240,8 +239,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 				err = zap_value_search(dp->dp_meta_objset,
 				    dsl_dir_phys(dd->dd_parent)->
 				    dd_child_dir_zapobj,
-				    ddobj, 0, dd->dd_myname,
-				    sizeof (dd->dd_myname));
+				    ddobj, 0, dd->dd_myname);
 			}
 			if (err != 0)
 				goto errout;
@@ -273,11 +271,9 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 				err = zap_lookup(dp->dp_meta_objset,
 				    dd->dd_object, DD_FIELD_LIVELIST,
 				    sizeof (uint64_t), 1, &obj);
-				if (err == 0) {
-					err = dsl_dir_livelist_open(dd, obj);
-					if (err != 0)
-						goto errout;
-				} else if (err != ENOENT)
+				if (err == 0)
+					dsl_dir_livelist_open(dd, obj);
+				else if (err != ENOENT)
 					goto errout;
 			}
 		}
@@ -590,7 +586,7 @@ dsl_dir_init_fs_ss_count(dsl_dir_t *dd, dmu_tx_t *tx)
 		return;
 
 	zc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
-	za = zap_attribute_alloc();
+	za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
 
 	/* Iterate my child dirs */
 	for (zap_cursor_init(zc, os, dsl_dir_phys(dd)->dd_child_dir_zapobj);
@@ -639,7 +635,7 @@ dsl_dir_init_fs_ss_count(dsl_dir_t *dd, dmu_tx_t *tx)
 	dsl_dataset_rele(ds, FTAG);
 
 	kmem_free(zc, sizeof (zap_cursor_t));
-	zap_attribute_free(za);
+	kmem_free(za, sizeof (zap_attribute_t));
 
 	/* we're in a sync task, update counts */
 	dmu_buf_will_dirty(dd->dd_dbuf, tx);
@@ -2304,18 +2300,15 @@ dsl_dir_is_zapified(dsl_dir_t *dd)
 	return (doi.doi_type == DMU_OTN_ZAP_METADATA);
 }
 
-int
+void
 dsl_dir_livelist_open(dsl_dir_t *dd, uint64_t obj)
 {
 	objset_t *mos = dd->dd_pool->dp_meta_objset;
 	ASSERT(spa_feature_is_active(dd->dd_pool->dp_spa,
 	    SPA_FEATURE_LIVELIST));
-	int err = dsl_deadlist_open(&dd->dd_livelist, mos, obj);
-	if (err != 0)
-		return (err);
+	dsl_deadlist_open(&dd->dd_livelist, mos, obj);
 	bplist_create(&dd->dd_pending_allocs);
 	bplist_create(&dd->dd_pending_frees);
-	return (0);
 }
 
 void
@@ -2495,5 +2488,6 @@ EXPORT_SYMBOL(dsl_dir_set_quota);
 EXPORT_SYMBOL(dsl_dir_set_reservation);
 #endif
 
+/* CSTYLED */
 ZFS_MODULE_PARAM(zfs, , zvol_enforce_quotas, INT, ZMOD_RW,
 	"Enable strict ZVOL quota enforcment");

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: BSD-2-Clause
 /*
  * Copyright (c) 2007 Pawel Jakub Dawidek <pjd@FreeBSD.org>
  * All rights reserved.
@@ -25,6 +24,9 @@
  * SUCH DAMAGE.
  */
 
+#include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
+
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/jail.h>
@@ -38,9 +40,6 @@
 #include <sys/zfs_context.h>
 
 static struct opensolaris_utsname hw_utsname = {
-	.sysname = ostype,
-	.nodename = prison0.pr_hostname,
-	.release = osrelease,
 	.machine = MACHINE
 };
 
@@ -53,6 +52,10 @@ utsname(void)
 static void
 opensolaris_utsname_init(void *arg)
 {
+
+	hw_utsname.sysname = ostype;
+	hw_utsname.nodename = prison0.pr_hostname;
+	hw_utsname.release = osrelease;
 	snprintf(hw_utsname.version, sizeof (hw_utsname.version),
 	    "%d", osreldate);
 }
