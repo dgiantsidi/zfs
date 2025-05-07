@@ -1402,8 +1402,6 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 			cmn_err(CE_WARN, "can't open objset for %llu, error %u",
 			    (unsigned long long)ds->ds_object, error);
 		}
-		remount = 0;
-		cleanup_global_variable(&recovery_map);
 		return (0);
 	}
 
@@ -1451,8 +1449,7 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 			os->os_next_write_raw[tx->tx_txg & TXG_MASK] = B_TRUE;
 		dsl_dataset_dirty(dmu_objset_ds(os), tx);
 		dmu_objset_disown(os, B_FALSE, FTAG);
-		remount = 0;
-		cleanup_global_variable(&recovery_map);
+		
 		return (0);
 	}
 
@@ -1469,6 +1466,7 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	 * but we can read the entire log later, we will not try to replay
 	 * or destroy beyond the last block we successfully claimed.
 	 */
+	remount = 1;
 	ASSERT3U(zh->zh_claim_txg, <=, first_txg);
 	if (zh->zh_claim_txg == 0 && !BP_IS_HOLE(&zh->zh_log)) {
 		(void) zil_parse(zilog, zil_claim_log_block,
