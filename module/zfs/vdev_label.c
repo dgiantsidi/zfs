@@ -155,6 +155,9 @@
 #include <sys/byteorder.h>
 #include <sys/zfs_bootenv.h>
 
+#include <sys/global_commitment_map.h>
+#include <sys/global_map.h>
+
 /*
  * Basic routines to read and write from a vdev label.
  * Used throughout the rest of this file.
