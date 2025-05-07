@@ -169,8 +169,8 @@ __dprintf(boolean_t dprint, const char *file, const char *func,
 		newfile = file;
 	}
 
-	i = snprintf(buf, size, "%px %s%s:%d:%s(): ",
-	    curthread, prefix, newfile, line, func);
+	i = snprintf(buf, size, "tid(%d):%s%s:%d:%s(): ",\
+		current->pid, prefix, newfile, line, func);
 
 	if (i < size) {
 		va_start(adx, fmt);
