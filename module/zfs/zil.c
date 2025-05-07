@@ -1389,7 +1389,6 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	objset_t *os;
 	int error;
 
-	remount = 1;
 
 	error = dmu_objset_own_obj(dp, ds->ds_object,
 	    DMU_OST_ANY, B_FALSE, B_FALSE, FTAG, &os);
@@ -1466,7 +1465,7 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	 * but we can read the entire log later, we will not try to replay
 	 * or destroy beyond the last block we successfully claimed.
 	 */
-	remount = 1;
+	zfs_dbgmsg(" remount=%d\n", remount);
 	ASSERT3U(zh->zh_claim_txg, <=, first_txg);
 	if (zh->zh_claim_txg == 0 && !BP_IS_HOLE(&zh->zh_log)) {
 		(void) zil_parse(zilog, zil_claim_log_block,
@@ -1504,7 +1503,7 @@ zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	int error;
 
 	ASSERT(tx == NULL);
-
+	remount = 1;
 	error = dmu_objset_from_ds(ds, &os);
 	if (error != 0) {
 		cmn_err(CE_WARN, "can't open objset %llu, error %d",
