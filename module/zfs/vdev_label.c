@@ -1806,6 +1806,8 @@ vdev_uberblock_sync(zio_t *zio, uint64_t *good_writes,
 int
 vdev_uberblock_sync_list(vdev_t **svd, int svdcount, uberblock_t *ub, int flags)
 {
+	zfs_dbgmsg(" we sync the uberblock to the vdevs (real storage)\n");
+
 	spa_t *spa = svd[0]->vdev_spa;
 	zio_t *zio;
 	uint64_t good_writes = 0;
@@ -2075,14 +2077,22 @@ retry:
 	if (ub->ub_txg < txg) {
 		boolean_t changed = uberblock_update(ub, spa->spa_root_vdev,
 		    txg, spa->spa_mmp.mmp_delay);
-
+		zfs_dbgmsg(" uberblock_update %s changed for txg=%llu\n", changed ? "has" : "has not", (u_longlong_t)txg);
 		if (!changed && list_is_empty(&spa->spa_config_dirty_list) &&
-		    !spa_multihost(spa))
+		    !spa_multihost(spa)) {
+			zfs_dbgmsg(" there is nothing to do for txg=%llu\n", (u_longlong_t)txg);
+			// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
 			return (0);
+		}
 	}
 
-	if (txg > spa_freeze_txg(spa))
+	if (txg > spa_freeze_txg(spa)) {
+		// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+		zfs_dbgmsg(" pool is frozen in spa_freeze_txg(spa)=%llu\
+			(now at txg=%llu)\n", (u_longlong_t) spa_freeze_txg(spa),\
+			(u_longlong_t) txg);
 		return (0);
+	}
 
 	ASSERT(txg <= spa->spa_final_txg);
 
@@ -2141,6 +2151,19 @@ retry:
 		}
 		goto retry;
 	}
+	/*
+	 * Place for prepare() callback
+	 * We do prepare() right before the uberblock update
+	 */
+	// @dimitra: FIXME!
+	// hrtime_t ms_delay = 10;
+	// zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
+	//ccf_zil_header_commitments = copy_commitments2(ccf_zil_header_commitments, zils_blocks_commitments);
+	//ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	//ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	ccf_state_get(&ccf_zil_commitments);
+	ccf_state_cleanup(&ccf_zil_commitments);
+	cleanup_global_variable(&cksum_map);
 
 	if (spa_multihost(spa))
 		mmp_update_uberblock(spa, ub);
