@@ -351,6 +351,7 @@ __attribute__((unused)) void ccf_state_append(ccf_state_t* ccf_zil_commitments, 
 
 __attribute__((unused)) void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments) {
   (void) ccf_zil_commitments;
+  int count = 0; 
   zil_commitment_t* cmt = list_head(&(ccf_zil_commitments->zil_blk_commitments));
   if (cmt == NULL) {
     zfs_dbgmsg(" zil_blk_commitments is empty!\n");
@@ -361,10 +362,12 @@ __attribute__((unused)) void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments)
       (u_longlong_t)cmt->blk_num.zc_word[0], (u_longlong_t)cmt->blk_num.zc_word[1], \
       (u_longlong_t)cmt->blk_num.zc_word[2], (u_longlong_t)cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
     for (;;) {
+      count++;
       zil_commitment_t* next_cmt = list_next(&(ccf_zil_commitments->zil_blk_commitments), cmt);
       if (next_cmt == NULL) {
         list_remove_head(&(ccf_zil_commitments->zil_blk_commitments));
         free_node(cmt, sizeof(zil_commitment_t));
+        zfs_dbgmsg(" [count of commitments in CCF = %d]\n", count);
         return;
       }
       zfs_dbgmsg(" next_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n", \
@@ -375,7 +378,6 @@ __attribute__((unused)) void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments)
       cmt = next_cmt;
     }
   }
-  return ;
   return;
 }
 
