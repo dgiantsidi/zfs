@@ -160,6 +160,24 @@ static __attribute__((unused)) void compute_path_compute_fletcher_self_checksumm
 	abd_fletcher_4_impl(abd, size, acd);
 }
 
+static void verify_path_compute_sha256_self_checksumming(zil_chain_t* zilc, abd_t *abd,\
+	uint64_t size, const void *ctx_template, zio_cksum_t *zcp, zio_cksum_t* cur_block_cksum) {
+	(void) zilc;
+	(void) cur_block_cksum;
+	abd_checksum_sha512_native(abd, size, ctx_template, zcp);
+	
+	ccf_state_cmp(&ccf_zil_commitments,\
+		zcp->zc_word); 
+}
+
+
+static __attribute__((unused)) void compute_path_compute_sha256_self_checksumming(zil_chain_t* zilc, \
+	abd_t *abd, uint64_t size, const void *ctx_template, zio_cksum_t *zcp) {
+	(void) zilc;
+	
+	abd_checksum_sha512_native(abd, size, ctx_template, zcp);
+}
+
 /*
  * Checksum vectors.
  *
@@ -270,6 +288,59 @@ abd_fletcher_4_native(abd_t *abd, uint64_t size,
 	abd_fletcher_4_impl(abd, size, &acd);
 }	
 
+void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
+    const void *ctx_template, zio_cksum_t *zcp) {
+	
+	(void) ctx_template;
+	
+	zil_chain_t zilc;
+	abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
+	zfs_dbgmsg(" blk_seqno=%llu\tsize=%llu\n", \
+		(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], \
+		(u_longlong_t) size);
+	zio_cksum_t cur_block_cksum = zilc.zc_eck.zec_cksum;
+	zio_cksum_t prev_block_cksum = cur_block_cksum;
+	prev_block_cksum.zc_word[ZIL_ZC_SEQ]--; // prev block has seqno that equals (blk_seqno-1)
+	if (is_verification_path(zcp) == 1) {
+		zfs_dbgmsg(" [VERIFY path]\n");
+	#if 0
+		void* previous_blk_hash = get_serialized_hash(&recovery_map, &(prev_block_cksum));
+		verify_path_compute_fletcher(previous_blk_hash,  &zilc, abd, &acd, size, &cur_block_cksum);
+		release_hash(previous_blk_hash);
+	#endif
+		verify_path_compute_sha256_self_checksumming(&zilc, abd, size, ctx_template, zcp, &cur_block_cksum);
+		return;
+	}
+	else {
+		zfs_dbgmsg(" [COMPUTE path]\n");
+	#if 0
+		// we are on the compute path	
+		void* previous_blk_hash = get_serialized_hash(&cksum_map, &(prev_block_cksum));
+		compute_path_compute_fletcher(previous_blk_hash, &zilc, abd, &acd, size);
+		release_hash(previous_blk_hash);
+
+		zio_eck_t eck;
+		eck.zec_cksum = *(acd.acd_zcp);
+		abd_copy_to_buf(&zilc, abd, sizeof(zil_chain_t));
+
+		zfs_dbgmsg(" next_blk_seqno=%016llx:%016llx:%016llx:%016llx\tzc_eck=%016llx:%016llx:%016llx:%016llx\n size=%llu", \
+			(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1], \
+			(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[2], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[3], \
+			(u_longlong_t) eck.zec_cksum.zc_word[0], (u_longlong_t) eck.zec_cksum.zc_word[1], (u_longlong_t) eck.zec_cksum.zc_word[2], \
+			(u_longlong_t) eck.zec_cksum.zc_word[3], (u_longlong_t)size);
+		
+		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), zilc.zc_next_blk.blk_birth);
+		print(&cksum_map);
+	#endif 
+		compute_path_compute_sha256_self_checksumming(&zilc, abd, size, ctx_template, zcp);
+		zio_eck_t eck;
+		eck.zec_cksum = *zcp;
+		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), BP_GET_LOGICAL_BIRTH(&(zilc.zc_next_blk)));
+		// print(&cksum_map);
+
+	}
+}
+
 void
 abd_fletcher_4_native_zilog(abd_t *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp)
@@ -373,7 +444,7 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	{{abd_checksum_sha256,		abd_checksum_sha256},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
-	{{abd_fletcher_4_native_zilog,	abd_fletcher_4_byteswap},
+	{{abd_checksum_sha256_zilog,	abd_fletcher_4_byteswap},
 	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{abd_checksum_off,		abd_checksum_off},
 	    NULL, NULL, 0, "noparity"},

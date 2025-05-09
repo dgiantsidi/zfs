@@ -135,6 +135,7 @@ extern zio_checksum_tmpl_free_t abd_checksum_blake3_tmpl_free;
 _SYS_ZIO_CHECKSUM_H zio_abd_checksum_func_t fletcher_4_abd_ops;
 extern zio_checksum_t abd_fletcher_4_native;
 extern zio_checksum_t abd_fletcher_4_native_zilog;
+extern zio_checksum_t abd_checksum_sha256_zilog;
 extern zio_checksum_t abd_fletcher_4_byteswap;
 
 extern int zio_checksum_equal(spa_t *, blkptr_t *, enum zio_checksum,
