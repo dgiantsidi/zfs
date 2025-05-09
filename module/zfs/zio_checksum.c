@@ -327,7 +327,7 @@ abd_fletcher_4_native_zilog(abd_t *abd, uint64_t size,
 		zio_eck_t eck;
 		eck.zec_cksum = *(acd.acd_zcp);
 		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), BP_GET_LOGICAL_BIRTH(&(zilc.zc_next_blk)));
-		print(&cksum_map);
+		// print(&cksum_map);
 
 	}
 }	

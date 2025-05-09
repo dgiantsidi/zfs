@@ -99,10 +99,12 @@ __attribute__((unused))  zc_eck get_hash(C_map_t *map, const cksum_seqno *key) {
   C_map_node_t **bucket = get_bucket(map, key, NULL);
   if (bucket && *bucket) {
     C_map_node_t *tmp = *bucket;
-    while (tmp) {
+    while (tmp != NULL) {
+      #if 0
       zfs_dbgmsg(" key=%016llx:%016llx:%016llx:%016llx\n", \
                  (llu_t)tmp->key.zc_word[0], (llu_t)tmp->key.zc_word[1],\
                  (llu_t)tmp->key.zc_word[2], (llu_t)tmp->key.zc_word[3]);
+      #endif
       if (memcmp(tmp->key.zc_word, key->zc_word, sizeof(cksum_seqno)) == 0)
         return tmp->value;
       else {

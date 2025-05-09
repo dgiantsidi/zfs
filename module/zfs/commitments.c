@@ -358,9 +358,11 @@ __attribute__((unused)) void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments)
     return;
   }
   else {
+    #if 0
     zfs_dbgmsg(" cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n", \
       (u_longlong_t)cmt->blk_num.zc_word[0], (u_longlong_t)cmt->blk_num.zc_word[1], \
       (u_longlong_t)cmt->blk_num.zc_word[2], (u_longlong_t)cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+    #endif
     for (;;) {
       count++;
       zil_commitment_t* next_cmt = list_next(&(ccf_zil_commitments->zil_blk_commitments), cmt);
@@ -370,9 +372,11 @@ __attribute__((unused)) void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments)
         zfs_dbgmsg(" [count of commitments in CCF = %d]\n", count);
         return;
       }
+      #if 0
       zfs_dbgmsg(" next_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n", \
         (u_longlong_t)next_cmt->blk_num.zc_word[0], (u_longlong_t)next_cmt->blk_num.zc_word[1], \
         (u_longlong_t)next_cmt->blk_num.zc_word[2], (u_longlong_t)next_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+      #endif
       list_remove_head(&(ccf_zil_commitments->zil_blk_commitments));
       free_node(cmt, sizeof(zil_commitment_t));
       cmt = next_cmt;
@@ -390,6 +394,7 @@ __attribute__((unused)) extern void ccf_state_get(ccf_state_t* ccf_zil_commitmen
     return;
   }
   else {
+    #if 0
     zfs_dbgmsg(" cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\t cmt->blk_digest.zc_word=%016llx:%016llx:%016llx:%016llx\n", \
       (u_longlong_t)cmt->blk_num.zc_word[0], (u_longlong_t)cmt->blk_num.zc_word[1], \
       (u_longlong_t)cmt->blk_num.zc_word[2], (u_longlong_t)cmt->blk_num.zc_word[ZIL_ZC_SEQ], \
@@ -399,12 +404,15 @@ __attribute__((unused)) extern void ccf_state_get(ccf_state_t* ccf_zil_commitmen
       zil_commitment_t* next_cmt = list_next(&(ccf_zil_commitments->zil_blk_commitments), cmt);
       if (next_cmt == NULL)
         return;
+
       zfs_dbgmsg(" next_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n", \
         (u_longlong_t)next_cmt->blk_num.zc_word[0], (u_longlong_t)next_cmt->blk_num.zc_word[1], \
         (u_longlong_t)next_cmt->blk_num.zc_word[2], (u_longlong_t)next_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
       cmt = next_cmt;
     }
-  }
+    #endif
+
+  } 
   return ;
 }
 

@@ -103,6 +103,10 @@ static int remount = 0; // is the zil_parse()
 [[maybe_unused]] static int
 zil_prt_rec_write_cb(void *data, size_t len, void *unused)
 {
+	(void) data;
+	(void) len;
+	(void) unused;
+	#if 0
 	#define print_buf_sz  950
 	(void) unused;
 	char *cdata = data;
@@ -119,6 +123,7 @@ zil_prt_rec_write_cb(void *data, size_t len, void *unused)
 		cdata++;
 	}
 	zfs_dbgmsg(" %s\n", tmp_buf);
+	#endif
 	return (0);
 }
 
@@ -2669,7 +2674,7 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 
 
 	zfs_dbgmsg(" lwb=%p, fill the actual transaction data into the lwb for lrc_txg=%llu and lrc_seq=%llu (following zil_lwb_assign) lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void*)lwb, (u_longlong_t)lr->lrc_txg, (u_longlong_t)lr->lrc_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
-
+#if 0
 	if (lr->lrc_txtype == TX_WRITE) {
 		if (lrwb->lr_common.lrc_reclen != sizeof (lr_write_t)) {
 			zfs_dbgmsg(" data is stored after the end of the lr_write record\n"); 
@@ -2700,6 +2705,7 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 	else {
 		zfs_dbgmsg(" HERE\n");
 	}
+#endif
 	// DIMITRA: print bp
 	print_blk(&(lwb->lwb_blk));
 
