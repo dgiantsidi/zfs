@@ -674,10 +674,13 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	zil_bp_tree_init(zilog);
 
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
-	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
-	starting_blk_cmt = get_zil_header_cmt_for_dsl(&ccf_zil_commitments);
-	final_blk_cmt = get_zil_tail_cmt_for_dsl(&ccf_zil_commitments);
+	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	starting_blk_cmt = get_zil_header_cmt_for_dsl(name, ccf_zil_header_commitments);
+	final_blk_cmt = get_zil_tail_cmt_for_dsl(name, ccf_zil_tail_commitments);
+	// starting_blk_cmt = get_zil_header_cmt_for_dsl(&ccf_zil_commitments);
+	// final_blk_cmt = get_zil_tail_cmt_for_dsl(&ccf_zil_commitments);
+	
 	//dump_zil_commitment2(&zil_tail_commitment);
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
@@ -697,11 +700,11 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 		if (first_block && remount) {
 			first_block = 0;
 			// todo: these are supposed to be initialized from CCF
-			// init(&recovery_map);
-			// zc_eck first_val =  get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
-			// zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
-			// final_blk_cmt->blk_digest = tail_hash;
-			// append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
+			init(&recovery_map);
+			zc_eck first_val =  get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
+			zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
+			final_blk_cmt->blk_digest = tail_hash;
+			append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
 			
 			// @dimitra todo: compare commitments at the calculation (zio_compute.c)
 			if (starting_blk_cmt != NULL) {
@@ -1764,11 +1767,11 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	zfs_dbgmsg(" **** tail_commitment start ****\n");
 	// dump_zil_commitment2(&zil_tail_commitment);
 	// append_cmts(ccf_zil_tail_commitments, tail_commitment);
-	ccf_state_append(&ccf_zil_commitments, tail_commitment);
-	ccf_state_get(&ccf_zil_commitments);
-	// ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
-	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	//ccf_state_append(&ccf_zil_commitments, tail_commitment);
+	//ccf_state_get(&ccf_zil_commitments);
+	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
+	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	zfs_dbgmsg(" **** tail_commitment end ****\n");
 
 	while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)

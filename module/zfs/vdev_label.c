@@ -2161,11 +2161,11 @@ retry:
 	// @dimitra: FIXME!
 	// hrtime_t ms_delay = 10;
 	// zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
-	//ccf_zil_header_commitments = copy_commitments2(ccf_zil_header_commitments, zils_blocks_commitments);
-	//ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	//ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
-	ccf_state_get(&ccf_zil_commitments);
-	ccf_state_cleanup(&ccf_zil_commitments);
+	ccf_zil_header_commitments = copy_commitments2(ccf_zil_header_commitments, zils_blocks_commitments);
+	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	// ccf_state_get(&ccf_zil_commitments);
+	// ccf_state_cleanup(&ccf_zil_commitments);
 	cleanup_global_variable(&cksum_map);
 
 	if (spa_multihost(spa))

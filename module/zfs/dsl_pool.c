@@ -597,7 +597,7 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 	(void) ds;
 	(void) objset_count;
 	(void) txg;
-	#if 0
+	#if 1
 	objset_t *os = ds->ds_objset;
 	char name[100];
 	dsl_dataset_name(os->os_dsl_dataset, name);
@@ -888,17 +888,17 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	if (dmu_objset_is_dirty(mos, txg)) {
 		dsl_pool_sync_mos(dp, tx); 
 		{
-			//char name[ZFS_MAX_DATASET_NAME_LEN];
-			//objset_t* os = dp->dp_meta_objset;
-			// dsl_dataset_name(os->os_dsl_dataset, name);
-			//zil_header_t zh = os->os_phys->os_zil_header;
-			// zfs_dbgmsg(" [MOS (pool level) COMMITMENT: name=%s\tzil_header] cksum_seq_no=%llu txg=%llu DVA=<%llu:%llx:%llx>\n", name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ],  (u_longlong_t)txg, (u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva));
-			//zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
-			// dump_zil_commitment2(zil_header_cmt);
+			char name[ZFS_MAX_DATASET_NAME_LEN];
+			objset_t* os = dp->dp_meta_objset;
+			dsl_dataset_name(os->os_dsl_dataset, name);
+			zil_header_t zh = os->os_phys->os_zil_header;
+			zfs_dbgmsg(" [MOS (pool level) COMMITMENT: name=%s\tzil_header] cksum_seq_no=%llu txg=%llu DVA=<%llu:%llx:%llx>\n", name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ],  (u_longlong_t)txg, (u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva));
+			zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+			dump_zil_commitment2(zil_header_cmt);
 			// we might update the global state with the commitments but these will be registered to 
 			// CCF only when the uberblock is going to be persisted
 			// as such we do not update CCF for a frozen pool
-			// append_cmts(&zils_blocks_commitments, zil_header_cmt);
+			append_cmts(&zils_blocks_commitments, zil_header_cmt);
 		}
 	}
 

@@ -49,7 +49,7 @@ typedef struct dyn_array_commitments dyn_array_commitments_t;
 __attribute__((unused)) extern zil_commitment_t* dump_zil_commitment(const zil_header_t* zh, const char* name, uint64_t txg);
 __attribute__((unused)) extern zil_commitment_t* generate_zil_header_cmt(const zil_header_t* zh, const char* name, uint64_t txg);
 __attribute__((unused)) extern void append_cmts(dyn_array_commitments_t* zils_header_commitments, zil_commitment_t* zil_header_cmt);
-#if 0
+#if 1
 __attribute__((unused)) extern void ccf_zil_commitments_protocol(dyn_array_commitments_t* zils_header_commitments, \
 	dyn_array_commitments_t* zils_tail_commitments, zil_commitment_t* zil_tail_cmt);
 #endif
@@ -61,8 +61,8 @@ __attribute__((unused)) extern void ccf_commit_cmts(dyn_array_commitments_t* zil
 __attribute__((unused)) extern void copy_commitments(dyn_array_commitments_t* dst, dyn_array_commitments_t src);
 __attribute__((unused)) extern void cleanup_ccf_cmts(dyn_array_commitments_t* prev_ccf_cmts);
 __attribute__((unused)) dyn_array_commitments_t* copy_commitments2(dyn_array_commitments_t* dst, dyn_array_commitments_t src);
-// __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
-// __attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
+__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
+__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
 
 
 
@@ -80,6 +80,6 @@ __attribute__((unused)) extern void ccf_state_cleanup(ccf_state_t* ccf_zil_commi
 __attribute__((unused)) extern void ccf_state_get(ccf_state_t* ccf_zil_commitments);
 __attribute__((unused)) extern void ccf_state_cmp(ccf_state_t* ccf_zil_commitments, uint64_t* calulated_digest);
 
-__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
-__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
+//__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
+//__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
 

@@ -286,10 +286,9 @@ __attribute__((unused)) void dump_zil_commitment2(const zil_commitment_t* cmt) {
   (u_longlong_t)DVA_GET_VDEV(&cmt->allocated_bp),  (u_longlong_t)DVA_GET_OFFSET(&cmt->allocated_bp), (u_longlong_t)DVA_GET_ASIZE(&cmt->allocated_bp));
 }
 
-__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_t* ccf_zil_commitments) {// (const char* name, dyn_array_commitments_t* ccf_zil_header_commitments) {
-  zil_commitment_t* cmt = list_head(&(ccf_zil_commitments->zil_blk_commitments));
-  return cmt;
-  #if 0
+__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments) {
+  
+  #if 1
   dyn_array_commitments_t* head = ccf_zil_header_commitments;
   int count = head->count;
 
@@ -304,20 +303,38 @@ __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_
     head = head->next;
   }
   return NULL;
+  #else
+    zil_commitment_t* cmt = list_head(&(ccf_zil_commitments->zil_blk_commitments));
+    return cmt;
   #endif
 }
-__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl( ccf_state_t* ccf_zil_commitments) { //(const char* name, dyn_array_commitments_t* ccf_zil_tail_commitments) {
-  zil_commitment_t* cmt = list_tail(&(ccf_zil_commitments->zil_blk_commitments));
-  return cmt;
-  // return get_zil_header_cmt_for_dsl(name, ccf_zil_tail_commitments);
-}
 
-#if 0
+
+#if 1
+__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_tail_commitments) {
+    return get_zil_header_cmt_for_dsl(name, ccf_zil_tail_commitments);
+}
+#else
+__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl( ccf_state_t* ccf_zil_commitments) { //(const char* name, dyn_array_commitments_t* ccf_zil_tail_commitments) {
+   
+    zil_commitment_t* cmt = list_tail(&(ccf_zil_commitments->zil_blk_commitments));
+    return cmt;
+}
+#endif
+
+
+#if 1
 __attribute__((unused)) void ccf_zil_commitments_protocol(dyn_array_commitments_t* zils_header_commitments, \
 	dyn_array_commitments_t* zils_tail_commitments, zil_commitment_t* zil_tail_cmt) {
-
+  zfs_dbgmsg(" 1\n");
   zil_commitment_t* cmt = get_zil_header_cmt_for_dsl(zil_tail_cmt->name, zils_header_commitments);
-    
+  zfs_dbgmsg(" 2\n");
+  if (cmt == NULL) {
+    zfs_dbgmsg(" zil_header_commitments is empty!\n");
+    return;
+  }
+  
+
   zc_eck empty_value;
   empty_value.zc_word[0] = 0;
   empty_value.zc_word[1] = 0;
