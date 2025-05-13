@@ -4048,7 +4048,7 @@ zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 	uint64_t *replayed_seq = &zilog->zl_replayed_seq[txg & TXG_MASK];
 	lwb_t *lwb;
 
-	zfs_dbgmsg(" *************** start (txg=%llu\t BP %s hole)***************\n",\
+	zfs_dbgmsg(" *************** start (txg=%llu, BP %s hole)***************\n",\
 		 (u_longlong_t)txg, (BP_IS_HOLE(&(zh->zh_log)))? "is a" : "is not a");
 
 	/*

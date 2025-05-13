@@ -140,7 +140,7 @@ static __attribute__((unused)) void verify_path_compute_fletcher_hash_chain(void
 		}
 	}
 	append_hash(&recovery_map, cur_block_cksum, (acd->acd_zcp), BP_GET_LOGICAL_BIRTH(&zilc->zc_next_blk));
-	print(&recovery_map);
+	// print(&recovery_map);
 }
 
 
@@ -261,7 +261,7 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	   }
    }
    append_hash(&recovery_map, cur_block_cksum, zcp, BP_GET_LOGICAL_BIRTH(&zilc->zc_next_blk));
-   print(&recovery_map);
+   // print(&recovery_map);
 }
 
 

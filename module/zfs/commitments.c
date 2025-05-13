@@ -51,21 +51,21 @@ __attribute__((unused)) void copy_commitments(dyn_array_commitments_t* dst, dyn_
 }
 
 __attribute__((unused)) dyn_array_commitments_t* copy_commitments2(dyn_array_commitments_t* dst, dyn_array_commitments_t src) {
-  zfs_dbgmsg("\n");
+  // zfs_dbgmsg("\n");
   dyn_array_commitments_t* dst_t = dst;
   //dyn_array_commitments_t* dst_t_copy = dst;
-  zfs_dbgmsg("\n");
+  // zfs_dbgmsg("\n");
 
   dyn_array_commitments_t* src_t = &src;
   dyn_array_commitments_t* ret_dst_t = alloc_node(sizeof(dyn_array_commitments_t));
   dyn_array_commitments_t* ret_dst_t_copy = ret_dst_t;
 
-  zfs_dbgmsg("\n");
-  zfs_dbgmsg(" ccf_zil_header_commitments=%p\n", (void*)dst_t);
+  // zfs_dbgmsg("\n");
+  // zfs_dbgmsg(" ccf_zil_header_commitments=%p\n", (void*)dst_t);
 
   int total_count = 0;
   int count = src.count;
-  zfs_dbgmsg("  src.count=%d dst_t->count=%d\n", count, dst_t->count);
+  // zfs_dbgmsg("  src.count=%d dst_t->count=%d\n", count, dst_t->count);
   // copy the src first which are the most up to date commitments anyway
   for (int i = 0; i < count; i++) {
     ret_dst_t->cmt_data = alloc_node(sizeof(zil_commitment_t));
@@ -87,17 +87,19 @@ __attribute__((unused)) dyn_array_commitments_t* copy_commitments2(dyn_array_com
   for (int i = 0; i < dst_count; i++) {
     // zfs_dbgmsg(" i=%d, count=%d dst_name=%s\n", i, ret_dst_t->count, dst_t->cmt_data->name);
     for (int j = 0; j < ret_dst_t_count; j++) {
-      int max_size = strlen(ret_dst_t->cmt_data->name) > strlen(dst_t->cmt_data->name) ? strlen(ret_dst_t->cmt_data->name) : strlen(dst_t->cmt_data->name);
+      // int max_size = strlen(ret_dst_t->cmt_data->name) > strlen(dst_t->cmt_data->name) ? strlen(ret_dst_t->cmt_data->name) : strlen(dst_t->cmt_data->name);
+      int equal_size = strnlen(ret_dst_t->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) == strnlen(dst_t->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) ? 1 : 0;
+
       // zfs_dbgmsg("j=%d %s --- %s\n", j, ret_dst_t->cmt_data->name, dst_t->cmt_data->name);
-      if (memcmp(ret_dst_t->cmt_data->name, dst_t->cmt_data->name, max_size) == 0) {
+      if (equal_size == 1 && memcmp(ret_dst_t->cmt_data->name, dst_t->cmt_data->name, strnlen(ret_dst_t->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN)) == 0) {
         append_flag = 0;
-        zfs_dbgmsg(" do not append this: %s\n", dst_t->cmt_data->name);
+        // zfs_dbgmsg(" do not append this: %s\n", dst_t->cmt_data->name);
         //break;
       }
       ret_dst_t = ret_dst_t->next;
     }
     if (append_flag) {
-      zfs_dbgmsg(" append this: %s\n", dst_t->cmt_data->name);
+      // zfs_dbgmsg(" append this: %s\n", dst_t->cmt_data->name);
       tail_dst_t->cmt_data = alloc_node(sizeof(zil_commitment_t));
       memcpy(tail_dst_t->cmt_data, dst_t->cmt_data, sizeof(zil_commitment_t));
       tail_dst_t->next = alloc_node(sizeof(dyn_array_commitments_t));
@@ -175,6 +177,7 @@ __attribute__((unused)) void cleanup_cmts(dyn_array_commitments_t* zils_header_c
 }
 
 __attribute__((unused)) void append_cmts(dyn_array_commitments_t* zils_header_commitments, zil_commitment_t* zil_header_cmt) {
+  zfs_dbgmsg(" 1 \n");
   if (zils_header_commitments->count == 0) {
     dyn_array_commitments_t* head = zils_header_commitments;
     head->count++;
@@ -185,14 +188,16 @@ __attribute__((unused)) void append_cmts(dyn_array_commitments_t* zils_header_co
     return;
   }
 
+  zfs_dbgmsg(" 2 \n");
   dyn_array_commitments_t* head = zils_header_commitments;
   int count = head->count;
   zfs_dbgmsg(" ************** current count of commitments=%d **************\n", head->count);
 
   int append_flag = 1; // equals to 1 for append and 0 for update in-place
   for (int i = 0; i < (count-1); i++) {
-    int max_size = strlen(head->cmt_data->name) > strlen(zil_header_cmt->name) ? strlen(head->cmt_data->name) : strlen(zil_header_cmt->name);
-    // zfs_dbgmsg(" %s\t%s\n", head->cmt_data->name, zil_header_cmt->name);
+    zfs_dbgmsg(" 3 count=%d \n", count);
+    int max_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) > strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN) ? strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) : strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN);
+    zfs_dbgmsg(" %s\t%s\n", head->cmt_data->name, zil_header_cmt->name);
     if (memcmp(head->cmt_data->name, zil_header_cmt->name, max_size) == 0) {
       // need to update
       zfs_dbgmsg(" update zil of objset name:%s\n", head->cmt_data->name);
@@ -202,22 +207,22 @@ __attribute__((unused)) void append_cmts(dyn_array_commitments_t* zils_header_co
     }
     head = head->next;
   }
-  
-  int max_size = strlen(head->cmt_data->name) > strlen(zil_header_cmt->name) ? strlen(head->cmt_data->name) : strlen(zil_header_cmt->name);
-  if (memcmp(head->cmt_data->name, zil_header_cmt->name, max_size) == 0) {
+  zfs_dbgmsg(" 4 \n");
+  int equal_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) == strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN) ? 1 : 0;
+  if (equal_size == 1 && memcmp(head->cmt_data->name, zil_header_cmt->name, strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN)) == 0) {
     // need to update
     zfs_dbgmsg(" update zil of objset name:%s\n", head->cmt_data->name);
     append_flag = 0;
     head->cmt_data = zil_header_cmt;
   }
-
+  zfs_dbgmsg(" 5 \n");
   if (append_flag) {
     zfs_dbgmsg(" append zil of objset name:%s\n", zil_header_cmt->name);
     head->next->cmt_data = zil_header_cmt;
     zils_header_commitments->count++;
     head->next->next = alloc_node(sizeof(dyn_array_commitments_t));
   }
-  
+  zfs_dbgmsg(" 6 \n");
   zfs_dbgmsg(" ************** end count=%d **************\n", zils_header_commitments->count);
   return;
 }
@@ -293,9 +298,9 @@ __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char
   int count = head->count;
 
   for (int i = 0; i < count; i++) {
-    int max_size = strlen(head->cmt_data->name) > strlen(name) ? strlen(head->cmt_data->name) : strlen(name);
+    int equal_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) == strnlen(name, ZFS_MAX_DATASET_NAME_LEN) ? 1 : 0;
     // zfs_dbgmsg(" %s\t%s\n", head->cmt_data->name, zil_header_cmt->name);
-    if (memcmp(head->cmt_data->name, name, max_size) == 0) {
+    if (equal_size == 1 && memcmp(head->cmt_data->name, name, strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN)) == 0) {
       // need to update
       zfs_dbgmsg(" found:%s (name=%s)\n", head->cmt_data->name, name);
       return head->cmt_data;
