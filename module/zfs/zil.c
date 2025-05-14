@@ -674,8 +674,8 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	zil_bp_tree_init(zilog);
 
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
-	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	starting_blk_cmt = get_zil_header_cmt_for_dsl(name, ccf_zil_header_commitments);
 	final_blk_cmt = get_zil_tail_cmt_for_dsl(name, ccf_zil_tail_commitments);
 	// starting_blk_cmt = get_zil_header_cmt_for_dsl(&ccf_zil_commitments);
@@ -1770,7 +1770,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	//ccf_state_append(&ccf_zil_commitments, tail_commitment);
 	//ccf_state_get(&ccf_zil_commitments);
 	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
-	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
+	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
 	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	zfs_dbgmsg(" **** tail_commitment end ****\n");
 
