@@ -195,9 +195,11 @@ __attribute__((unused)) void append_cmts(dyn_array_commitments_t* zils_header_co
   int append_flag = 1; // equals to 1 for append and 0 for update in-place
   for (int i = 0; i < (count-1); i++) {
     //zfs_dbgmsg(" 3 count=%d \n", count);
-    int max_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) > strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN) ? strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) : strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN);
+    // int max_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) > strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN) ? strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) : strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN);
+    int equal_size = strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN) == strnlen(zil_header_cmt->name, ZFS_MAX_DATASET_NAME_LEN) ? 1 : 0;
+
     //zfs_dbgmsg(" %s\t%s\n", head->cmt_data->name, zil_header_cmt->name);
-    if (memcmp(head->cmt_data->name, zil_header_cmt->name, max_size) == 0) {
+    if (equal_size == 1 && memcmp(head->cmt_data->name, zil_header_cmt->name, strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN)) == 0) {
       // need to update
       //zfs_dbgmsg(" update zil of objset name:%s\n", head->cmt_data->name);
       append_flag = 0;
@@ -230,7 +232,7 @@ __attribute__((unused))  zil_commitment_t* generate_zil_tail_cmt(const char* nam
   zil_commitment_t* gen_commitment = alloc_node(sizeof(zil_commitment_t));
   gen_commitment->txg_sync = txg;
   gen_commitment->blk_num = blk_cksum;
-  memcpy(gen_commitment->name, name, strlen(name));
+  memcpy(gen_commitment->name, name, strnlen(name, ZFS_MAX_DATASET_NAME_LEN));
   zio_cksum_t* blk_zc_eck = get_serialized_hash(&cksum_map, &(blk_cksum));
 
   gen_commitment->blk_digest.zc_word[0] = 0;
@@ -354,7 +356,14 @@ __attribute__((unused)) void ccf_zil_commitments_protocol(dyn_array_commitments_
       zfs_dbgmsg(" update did not happen!\n");
     }
   }
-  append_cmts(zils_tail_commitments, zil_tail_cmt);
+  zil_commitment_t* zil_tail_cmt_copy = alloc_node(sizeof(zil_commitment_t));
+  zil_tail_cmt_copy->blk_num = zil_tail_cmt->blk_num;
+  zil_tail_cmt_copy->blk_digest = zil_tail_cmt->blk_digest;
+  zil_tail_cmt_copy->txg_sync = zil_tail_cmt->txg_sync;
+  zil_tail_cmt_copy->allocated_bp = zil_tail_cmt->allocated_bp;
+  memcpy(zil_tail_cmt_copy->name, zil_tail_cmt->name, strnlen(zil_tail_cmt->name, ZFS_MAX_DATASET_NAME_LEN));
+
+  append_cmts(zils_tail_commitments, zil_tail_cmt_copy);
 }
 #endif
 
