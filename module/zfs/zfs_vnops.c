@@ -58,6 +58,7 @@
 #include <sys/zfs_quota.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/zfs_znode.h>
+#include <sys/zfs_context.h>
 
 /*
  * Enables access to the block cloning feature. If this setting is 0, then even

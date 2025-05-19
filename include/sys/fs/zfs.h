@@ -710,6 +710,7 @@ typedef struct zpool_load_policy {
 	uint64_t	zlp_maxmeta;	/* max acceptable meta-data errors */
 	uint64_t	zlp_maxdata;	/* max acceptable data errors */
 	uint64_t	zlp_txg;	/* specific txg to load */
+	const char	*zlp_ub_commitment;	/* pool commitment when load */
 } zpool_load_policy_t;
 
 /*
@@ -865,6 +866,8 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_CONFIG_EXPANSION_TIME	"expansion_time"	/* not stored */
 #define	ZPOOL_CONFIG_REBUILD_STATS	"org.openzfs:rebuild_stats"
 #define	ZPOOL_CONFIG_COMPATIBILITY	"compatibility"
+// commitment stored in spa
+#define ZPOOL_CONFIG_UB_COMMITMENT	"config_ub_commitment"
 
 /*
  * The persistent vdev state is stored as separate values rather than a single
@@ -884,6 +887,8 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_LOAD_REQUEST_TXG		"load-request-txg"
 #define	ZPOOL_LOAD_META_THRESH		"load-meta-thresh"
 #define	ZPOOL_LOAD_DATA_THRESH		"load-data-thresh"
+// commitment stored in pool
+#define ZPOOL_LOAD_UB_COMMITMENT	"load-ub-commitment"
 
 /* Rewind data discovered */
 #define	ZPOOL_CONFIG_LOAD_TIME		"rewind_txg_ts"

@@ -154,6 +154,7 @@
 #include <sys/fs/zfs.h>
 #include <sys/byteorder.h>
 #include <sys/zfs_bootenv.h>
+#include <sys/sha2.h>
 
 #include <sys/global_commitment_map.h>
 #include <sys/global_map.h>
@@ -2132,6 +2133,43 @@ retry:
 		goto retry;
 	}
 
+
+	uberblock_dump(ub);
+
+	/*
+	 * Send commitment of prev uberblock and new uberblock to the ledger
+	 * Prev uberblock (before txg sync): &spa->spa_ubsync
+	 * New uberblock (after txg sync): &spa->uberblock, e.g., ub in this function
+	 *
+	 */
+
+	// uberblock before txg sync
+	uberblock_t *prev_ub = &spa->spa_ubsync;
+
+	uberblock_hex_t *prev_ub_hex, *ub_hex;
+	uberblock_digest_t *prev_ub_digest, *ub_digest;
+
+	prev_ub_hex = kmem_alloc(sizeof(*prev_ub_hex), KM_SLEEP);
+	prev_ub_digest = kmem_alloc(sizeof(*prev_ub_digest), KM_SLEEP);
+	ub_hex = kmem_alloc(sizeof(*ub_hex), KM_SLEEP);
+	ub_digest = kmem_alloc(sizeof(*ub_digest), KM_SLEEP);
+
+	uberblock_serialize(prev_ub, prev_ub_hex);
+	uberblock_serialize(ub, ub_hex);
+
+	zfs_dbgmsg("serialized_prev_uberblock %s", prev_ub_hex->hex_str);
+	zfs_dbgmsg("serialized_new_uberblock %s", ub_hex->hex_str);
+
+	ub_hex_to_digest(prev_ub_hex, prev_ub_digest);
+	ub_hex_to_digest(ub_hex, ub_digest);
+
+	zfs_dbgmsg("Hash digest of the prev uberblock %s", prev_ub_digest->digest);
+	zfs_dbgmsg("Hash digest of the new uberblock %s", ub_digest->digest);
+
+	/*
+	 * TODO: submit commitment updates to the ledger
+	 */
+
 	/*
 	 * Sync the uberblocks to all vdevs in svd[].
 	 * If the system dies in the middle of this step, there are two cases
@@ -2170,6 +2208,12 @@ retry:
 
 	if (spa_multihost(spa))
 		mmp_update_uberblock(spa, ub);
+
+	// after ub flush, release memory
+	kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
+	kmem_free(prev_ub_hex, sizeof(*prev_ub_hex));
+	kmem_free(ub_digest, sizeof(*ub_digest));
+	kmem_free(ub_hex, sizeof(*ub_hex));
 
 	/*
 	 * Sync out odd labels for every dirty vdev.  If the system dies

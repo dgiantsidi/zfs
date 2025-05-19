@@ -38,11 +38,22 @@
 extern "C" {
 #endif
 
+#define UBERBLOCK_SIZE 26
+#define HEX_PER_UINT64 16
+#define HEX_PER_UINT8 2
+
 typedef struct uberblock uberblock_t;
+typedef struct uberblock_hex uberblock_hex_t;
+typedef struct uberblock_digest uberblock_digest_t;
 
 extern int uberblock_verify(uberblock_t *);
 extern boolean_t uberblock_update(uberblock_t *ub, vdev_t *rvd, uint64_t txg,
     uint64_t mmp_delay);
+
+extern void uberblock_dump(uberblock_t *ub);
+extern void uberblock_serialize(uberblock_t *ub, uberblock_hex_t *ub_hex);
+extern void uberblock_deserialize(uberblock_t *ub, uberblock_hex_t *ub_hex);
+extern void ub_hex_to_digest(uberblock_hex_t *ub_hex, uberblock_digest_t *ub_digest);
 
 #ifdef	__cplusplus
 }

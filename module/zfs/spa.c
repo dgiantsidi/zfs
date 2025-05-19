@@ -46,6 +46,10 @@
  * pool.
  */
 
+#include "sys/sha2.h"
+#include "sys/sysmacros.h"
+#include "sys/uberblock.h"
+#include "sys/zfs_debug.h"
 #include <sys/zfs_context.h>
 #include <sys/fm/fs/zfs.h>
 #include <sys/spa_impl.h>
@@ -4119,6 +4123,19 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 	uberblock_t *ub = &spa->spa_uberblock;
 	boolean_t activity_check = B_FALSE;
 
+	const char *ub_commitment_nvpair = NULL;
+	// serialized selected uberblock
+	uberblock_hex_t *selected_ub_hex = NULL;
+	// hash digest of the selected uberblock
+	uberblock_digest_t *selected_ub_digest = NULL;
+	// hash digest of prev uberblock commitment
+	uberblock_digest_t *prev_ub_digest = NULL;
+	// hash digest of new uberblock commitment
+	uberblock_digest_t *new_ub_digest = NULL;
+
+	nvpair_t *elem = NULL;
+	const char *nm;
+
 	/*
 	 * If we are opening the checkpointed state of the pool by
 	 * rewinding to it, at this point we will have written the
@@ -4154,6 +4171,80 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 		nvlist_free(label);
 		spa_load_failed(spa, "no valid uberblock found");
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, ENXIO));
+	}
+
+	/*
+	 * Check uberblock's checksum against mount time commitment
+	 */
+
+	selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
+        selected_ub_digest = kmem_alloc(sizeof(*selected_ub_digest), KM_SLEEP);
+	prev_ub_digest = kmem_alloc(sizeof(*prev_ub_digest), KM_SLEEP);
+	new_ub_digest = kmem_alloc(sizeof(*new_ub_digest), KM_SLEEP);
+
+	// load commitment
+	while ((elem = nvlist_next_nvpair(spa->spa_config, elem)) != NULL) {
+		nm = nvpair_name(elem);
+		if (strcmp(nm, ZPOOL_CONFIG_UB_COMMITMENT) == 0) {
+			// nvpair handles the memory lifecycle
+			(void) nvpair_value_string(elem, &ub_commitment_nvpair);
+			// copy commitment hex
+			if (ub_commitment_nvpair != NULL) {
+				// locate the colon
+				const char *colon = strchr(ub_commitment_nvpair, ':');
+				if (colon == NULL) {
+					zfs_dbgmsg("Error: colon not found in input string");
+					return SET_ERROR(EINVAL);
+				}
+				size_t prev_len = colon - ub_commitment_nvpair;
+				if (prev_len > SHA256_DIGEST_LENGTH * HEX_PER_UINT8) {
+					prev_len = SHA256_DIGEST_LENGTH * HEX_PER_UINT8;
+				}
+
+				strncpy(prev_ub_digest->digest, ub_commitment_nvpair, prev_len);
+				prev_ub_digest->digest[64] = '\0';
+
+				strncpy(new_ub_digest->digest, colon + 1, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
+				new_ub_digest->digest[64] = '\0';
+
+			}
+			break;
+		}
+	}
+
+	if (ub_commitment_nvpair == NULL) {
+		zfs_dbgmsg("no commitment provided. bypass commitment verification");
+	} else {
+		// check if provided uberblock matches selected one
+		// commitment user provided
+		zfs_dbgmsg("prev ub digest: %s", prev_ub_digest->digest);
+		zfs_dbgmsg("new ub digest: %s", new_ub_digest->digest);
+		// hash digest of the selected uberblock
+		selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
+		uberblock_serialize(ub, selected_ub_hex);
+		ub_hex_to_digest(selected_ub_hex, selected_ub_digest);
+
+		zfs_dbgmsg("selected ub digest: %s", selected_ub_digest->digest);
+		// match the selected uberblock against two provided uberblock
+		if (strcmp(selected_ub_digest->digest, prev_ub_digest->digest) == 0 || strcmp(selected_ub_digest->digest, new_ub_digest->digest) == 0) {
+			zfs_dbgmsg("commitment verification successful. uberblock hash digest: %s", selected_ub_digest->digest);
+
+			kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
+			kmem_free(selected_ub_digest, sizeof(*selected_ub_digest));
+			kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
+			kmem_free(new_ub_digest, sizeof(*new_ub_digest));
+		} else {
+			zfs_dbgmsg("ERROR: uberblock mismatch!");
+			zfs_dbgmsg("provided first uberblock digest in hex: %s", prev_ub_digest->digest);
+			zfs_dbgmsg("provided second uberblock digest in hex: %s", new_ub_digest->digest);
+			zfs_dbgmsg("selected uberblock digest by zfs: %s", selected_ub_digest->digest);
+
+			kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
+			kmem_free(selected_ub_digest, sizeof(*selected_ub_digest));
+			kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
+			kmem_free(new_ub_digest, sizeof(*new_ub_digest));
+			return SET_ERROR(EINVAL);
+		}
 	}
 
 	if (spa->spa_load_max_txg != UINT64_MAX) {
@@ -6769,6 +6860,11 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	spa->spa_config_source = SPA_CONFIG_SRC_TRYIMPORT;
 
+	// move commitment from pool to spa
+	if (policy.zlp_ub_commitment != NULL) {
+		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_UB_COMMITMENT, policy.zlp_ub_commitment);
+	}
+
 	if (state != SPA_LOAD_RECOVER) {
 		spa->spa_last_ubsync_txg = spa->spa_load_txg = 0;
 		zfs_dbgmsg("spa_import: importing %s", pool);
@@ -6946,6 +7042,11 @@ spa_tryimport(nvlist_t *tryconfig)
 	 * the correct configuration regardless of the missing log device.
 	 */
 	spa->spa_import_flags |= ZFS_IMPORT_MISSING_LOG;
+
+	// move commitment from pool to spa
+	if (policy.zlp_ub_commitment != NULL) {
+		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_UB_COMMITMENT, policy.zlp_ub_commitment);
+	}
 
 	error = spa_load(spa, SPA_LOAD_TRYIMPORT, SPA_IMPORT_EXISTING);
 

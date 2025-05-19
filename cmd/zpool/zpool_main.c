@@ -68,6 +68,8 @@
 #include <sys/mount.h>
 #include <sys/sysmacros.h>
 #include <string.h>
+#include <sys/zio_checksum.h>
+#include <sys/uberblock_impl.h>
 #include <math.h>
 
 #include <libzfs.h>
@@ -479,7 +481,7 @@ get_usage(zpool_help_t idx)
 		    "\t    [-d dir | -c cachefile] [-D] [-l] [-f] [-m] [-N] "
 		    "[-R root] [-F [-n]] -a\n"
 		    "\timport [-o mntopts] [-o property=value] ... \n"
-		    "\t    [-d dir | -c cachefile] [-D] [-l] [-f] [-m] [-N] "
+		    "\t    [-d dir | -c cachefile] [-C prev_commitment:new_commitment] [-D] [-l] [-f] [-m] [-N]"
 		    "[-R root] [-F [-n]]\n"
 		    "\t    [--rewind-to-checkpoint] <pool | id> [newpool]\n"));
 	case HELP_IOSTAT:
@@ -4276,13 +4278,16 @@ zpool_do_prefetch(int argc, char **argv)
  *       import [-o mntopts] [-o prop=value] ... [-R root] [-D] [-l]
  *              [-d dir | -c cachefile | -s] [-f] -a
  *       import [-o mntopts] [-o prop=value] ... [-R root] [-D] [-l]
- *              [-d dir | -c cachefile | -s] [-f] [-n] [-F] <pool | id>
+ *              [-d dir | -c cachefile | -s] [-C prev_commitment:new_commitment] [-f] [-n] [-F] <pool | id>
  *              [newpool]
  *
  *	-c	Read pool information from a cachefile instead of searching
  *		devices. If importing from a cachefile config fails, then
  *		fallback to searching for devices only in the directories that
  *		exist in the cachefile.
+ *
+ *	-C	Verify the pool's uberblock digest against provided pool commitments.
+ *		If the verification failes, then terminate the importing process.
  *
  *	-d	Scan in a specific directory, other than /dev/.  More than
  *		one directory can be specified using multiple '-d' options.
@@ -4355,13 +4360,15 @@ zpool_do_import(int argc, char **argv)
 	importargs_t idata = { 0 };
 	char *endptr;
 
+	const char *commitment_hex = NULL;
+
 	struct option long_options[] = {
 		{"rewind-to-checkpoint", no_argument, NULL, CHECKPOINT_OPT},
 		{0, 0, 0, 0}
 	};
 
 	/* check options */
-	while ((c = getopt_long(argc, argv, ":aCc:d:DEfFlmnNo:R:stT:VX",
+	while ((c = getopt_long(argc, argv, ":aC:c:d:DEfFlmnNo:R:stT:VX",
 	    long_options, NULL)) != -1) {
 		switch (c) {
 		case 'a':
@@ -4444,6 +4451,30 @@ zpool_do_import(int argc, char **argv)
 		case CHECKPOINT_OPT:
 			flags |= ZFS_IMPORT_CHECKPOINT;
 			break;
+		case 'C':
+			/*
+			 * Usage: zpool import ... [-C prev_commitment:new_commitment]
+			 * prev_commitment:	sha256 digest of the uberblock before txg_sync.
+			 * new_commitment: sha256 digest of the uberblock after txg_sync
+			 *
+			 * How to obtain prev_commitment:
+			 * 	cat /proc/spl/kstat/zfs/dbgmsg | grep "prev uberblock" | tail -n 1 | tail -c 65 | head -c 64
+			 * How to obtain new_commitment:
+			 * 	cat /proc/spl/kstat/zfs/dbgmsg | grep "new uberblock" | tail -n 1 | tail -c 65 | head -c 64
+			 */
+			commitment_hex = optarg;
+			size_t len = strlen(commitment_hex);
+			// incorrect string length: expected 129
+			if (len != (SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 1)) {
+				(void) fprintf(stderr, gettext("incorrect commitment length. Expected %llu, but received '%zu'\n"), (u_longlong_t)(SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 1), len);
+				usage(B_FALSE);
+			} else {
+				// correct hex string length
+				fprintf(stderr, "correct input length\n");
+				// make sure there is no rollback/recovery when spa_load fails.
+				rewind_policy = ZPOOL_NEVER_REWIND;
+			}
+			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
 			    "'%c' option\n"), optopt);
@@ -4498,6 +4529,12 @@ zpool_do_import(int argc, char **argv)
 	    nvlist_add_uint32(policy, ZPOOL_LOAD_REWIND_POLICY,
 	    rewind_policy) != 0)
 		goto error;
+	// add ub commitment to load policy
+	// commitment_hex format: <prev_ub_digest>:<new_ub_digest>"
+	if (commitment_hex != NULL) {
+	    if (nvlist_add_string(policy, ZPOOL_LOAD_UB_COMMITMENT, commitment_hex) != 0)
+		    goto error;
+	}
 
 	/* check argument count */
 	if (do_all) {
