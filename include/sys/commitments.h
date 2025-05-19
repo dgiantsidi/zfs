@@ -9,8 +9,8 @@
 #include <zfs_fletcher.h>
 #include <sys/sha2.h>
 
-#define HEX_PER_UINT8 sizeof(int)
-#define ZIL_COMMITMENT_SIZE SHA256_DIGEST_LENGTH * HEX_PER_UINT8 + 1 /* end-of-array */
+#define HEX_PER_UINT8_SZ sizeof(int)
+#define ZIL_COMMITMENT_SIZE SHA256_DIGEST_LENGTH * HEX_PER_UINT8_SZ + 1 /* end-of-array */
 
 enum commitments_type {
 	ZIL_TAIL_COMMITMENT = 0,
