@@ -685,7 +685,7 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
 	
-	zfs_dbgmsg(" remount=%d\n", remount);
+	zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d\n", remount, BP_IS_HOLE(&(zh->zh_log)));
 
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
@@ -694,8 +694,11 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 		char *lrp = NULL, *end = NULL;
 		arc_buf_t *abuf = NULL;
 
-		if (blk_seq > claim_blk_seq)
+		if (blk_seq > claim_blk_seq) {
+			zfs_dbgmsg(" zil_parse: blk_seq %llu > claim_blk_seq %llu\n",
+			    (u_longlong_t)blk_seq, (u_longlong_t)claim_blk_seq);
 			break;
+		}
 
 		if (first_block && remount) {
 			first_block = 0;
