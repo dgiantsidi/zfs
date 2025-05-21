@@ -685,8 +685,11 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
 	
-	zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d\n", remount, BP_IS_HOLE(&(zh->zh_log)));
-
+	zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d [(!BP_IS_EMBEDDED(bp)=%d && DVA_IS_EMPTY(BP_IDENTITY(bp))=%d)] (start_blk=%llu, end_blk=%llu)\n",\
+		remount, BP_IS_HOLE(&(zh->zh_log)), (!BP_IS_EMBEDDED(&(zh->zh_log))), DVA_IS_EMPTY(BP_IDENTITY(&(zh->zh_log))), \
+		(u_longlong_t)starting_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
+		(u_longlong_t)final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+	
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
 		uint64_t blk_seq = blk.blk_cksum.zc_word[ZIL_ZC_SEQ];

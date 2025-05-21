@@ -212,8 +212,9 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	zio_cksum_t* cur_block_cksum) {
    // check if it is empty; there is no previous block
    if (is_empty(previous_blk_hash) > 0) {
-	   zfs_dbgmsg(" It should be the header, there is no previous blk for blk_seqno=%llu\tsize=%llu\n", \
-		   (u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+	   zfs_dbgmsg(" It should be the header, there is no previous blk\
+		for blk_seqno=%llu\tsize=%llu\n", \
+		(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
 
 	   if (memcmp(cur_block_cksum->zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
 		   zfs_dbgmsg(" zil headers match\n");
@@ -232,8 +233,9 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	   // todo: check that the computed hash equals the stored in the map (check the starting point is correct)
    }
    else {
-	   zfs_dbgmsg(" It is a middle blk (or the tail), there is previous blk for blk_seqno=%llu\tsize=%llu\n", \
-		   (u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+	   zfs_dbgmsg(" It is a middle blk (or the tail), there is previous\
+			blk for blk_seqno=%llu\tsize=%llu\n", \
+			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
 
 	   void* acc_data = alloc_node(size + sizeof(zc_eck));
 	   void* blk_content = alloc_node(size);
@@ -251,8 +253,9 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 
 	   // todo: check that the tail is also ok
 	   if (memcmp(final_blk_cmt->blk_num.zc_word, zilc->zc_eck.zec_cksum.zc_word, sizeof(zio_cksum_t)) == 0) {
-		   zfs_dbgmsg( " This is the tail of the zil ...\n");
-		   if (memcmp(zcp->zc_word, final_blk_cmt->blk_digest.zc_word, sizeof(final_blk_cmt->blk_digest)) == 0) {
+		   zfs_dbgmsg( " This is the tail of the zil ... blk=%llu\n", (u_longlong_t)cur_block_cksum->zc_word[ZIL_ZC_SEQ]);
+		   if (memcmp(zcp->zc_word, final_blk_cmt->blk_digest.zc_word,\
+				sizeof(final_blk_cmt->blk_digest)) == 0) {
 			   zfs_dbgmsg( " zil hash-chain is verified ...\n");
 		   }
 		   else {
