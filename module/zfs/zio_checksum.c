@@ -192,9 +192,17 @@ static __attribute__((unused)) void compute_path_compute_sha256_hash_chain(void*
 			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
 		void* acc_data = alloc_node(size + sizeof(zc_eck));
 		void* blk_content = alloc_node(size);
-	
-		// Todo: double-check those
 		abd_copy_to_buf(blk_content, abd, size);
+		/*
+		// manual fault injection
+		if (zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ] == 5) {
+			zfs_dbgmsg(" I compromised the data\n");
+			((char*)blk_content)[1024] = 0xFF;
+			((char*)blk_content)[1900] = 0xFF;
+		}
+		*/
+		// Todo: double-check those
+		//abd_copy_to_buf(blk_content, abd, size);
 		memcpy(acc_data, blk_content, size);
 		memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
 		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
