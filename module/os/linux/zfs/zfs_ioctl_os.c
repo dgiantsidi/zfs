@@ -102,6 +102,8 @@ zfsdev_private_set_state(void *priv, zfsdev_state_t *zs)
 zfsdev_state_t *
 zfsdev_private_get_state(void *priv)
 {
+	zfs_dbgmsg("\n");
+
 	struct file *filp = priv;
 
 	return (filp->private_data);
@@ -111,6 +113,7 @@ static int
 zfsdev_open(struct inode *ino, struct file *filp)
 {
 	int error;
+	zfs_dbgmsg("\n");
 
 	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_init(filp);
@@ -127,12 +130,40 @@ zfsdev_release(struct inode *ino, struct file *filp)
 	return (0);
 }
 
+static int zfsdev_map(struct file *filp, struct vm_area_struct *vma) {
+	zfs_dbgmsg("\n");
+	#if 0
+	int error;
+	zfsdev_state_t *zs;
+
+	if (vma->vm_pgoff != 0) {
+		return (-SET_ERROR(EINVAL));
+	}
+
+	zs = zfsdev_private_get_state(filp);
+	if (zs == NULL) {
+		return (-SET_ERROR(ENODEV));
+	}
+	#endif
+
+	#if 0
+	error = zfs_map(zs, vma->vm_start, vma->vm_end - vma->vm_start,
+	    vma->vm_flags);
+	if (error != 0) {
+		return (-error);
+	}
+	#endif
+
+	return (0);
+}
+
 static long
 zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 {
 	uint_t vecnum;
 	zfs_cmd_t *zc;
 	int error, rc;
+	zfs_dbgmsg("\n");
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 
@@ -232,6 +263,7 @@ static const struct file_operations zfsdev_fops = {
 	.open		= zfsdev_open,
 	.release	= zfsdev_release,
 	.unlocked_ioctl	= zfsdev_ioctl,
+	.mmap		= zfsdev_map,
 	.compat_ioctl	= zfsdev_compat_ioctl,
 	.owner		= THIS_MODULE,
 };

@@ -87,6 +87,7 @@ libzfs_handle_t *g_zfs;
 static int mount_tp_nthr = 512;  /* tpool threads for multi-threaded mounting */
 
 static int zpool_do_create(int, char **);
+static int zpool_do_ccf(int, char **);
 static int zpool_do_destroy(int, char **);
 
 static int zpool_do_add(int, char **);
@@ -391,6 +392,7 @@ static zpool_command_t command_table[] = {
 	{ "version",	zpool_do_version,	HELP_VERSION		},
 	{ NULL },
 	{ "create",	zpool_do_create,	HELP_CREATE		},
+	{ "ccf",	zpool_do_ccf,	HELP_CREATE		},
 	{ "destroy",	zpool_do_destroy,	HELP_DESTROY		},
 	{ NULL },
 	{ "add",	zpool_do_add,		HELP_ADD		},
@@ -1949,6 +1951,14 @@ errout:
 	(void) close(fd);
 
 	return (ret);
+}
+
+int
+zpool_do_ccf(int argc, char **argv) {
+	(void) argc;
+	char* poolname = argv[1];
+	zpool_ccf(poolname);
+	return 0;
 }
 
 /*
