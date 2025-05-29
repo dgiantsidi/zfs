@@ -27,5 +27,6 @@
 int
 lzc_ioctl_fd(int fd, unsigned long request, zfs_cmd_t *zc)
 {
+	fprintf(stdout, "%s\n", __func__);
 	return (ioctl(fd, request, zc));
 }

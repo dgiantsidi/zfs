@@ -1500,6 +1500,23 @@ zpool_is_draid_spare(const char *name)
 	return (B_FALSE);
 }
 
+
+static void* get_commitments(void* poolname_v) {
+	libzfs_handle_t *hdl = NULL;
+	hdl = libzfs_init();
+	const char* poolname = (const char*)poolname_v;
+	zfs_cmd_t zc_uio = {"\0"};
+	memcpy(zc_uio.zc_name, poolname, strlen(poolname));
+	zc_uio.zc_name[sizeof(zc_uio.zc_name) - 1] = '\0'; // Ensure null termination
+	for (;;) {
+		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL, &zc_uio);
+		printf(" output=%s\n", zc_uio.zc_value);
+		sleep(10);
+	}
+	return NULL;
+}
+
+
 /*
  * Create the named pool, using the provided vdev list.  It is assumed
  * that the consumer has already validated the contents of the nvlist, so we
@@ -1590,6 +1607,31 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 
 	(void) strlcpy(zc.zc_name, pool, sizeof (zc.zc_name));
 
+	/*
+	 * 1) spawn a thread to execute the zfs_ioctl(.., ZFS_IOC_UIO_TO_KERNEL, ..) syscall
+	 * 2) the handler of the zfs_ioctl(.., ZFS_IOC_UIO_TO_KERNEL, ..) will return when there is a new commitment
+	*/
+	
+	pthread_t thread_id;
+	
+	if (pthread_create(&thread_id, NULL, get_commitments, (void*)zc.zc_name) != 0) {
+		printf("Failed to create thread: %s\n", strerror(errno));
+	}
+	else {
+		// Detach the thread
+		if (pthread_detach(thread_id) != 0) {
+			printf("Failed to detach the thread\n");
+			return 1;
+		}
+	}
+
+
+	// get_commitments(zc.zc_name);
+	// zfs_cmd_t zc_uio = zc;
+	// zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL, &zc_uio);
+	// printf(" output=%s\n", zc_uio.zc_value);
+	
+	
 	if ((ret = zfs_ioctl(hdl, ZFS_IOC_POOL_CREATE, &zc)) != 0) {
 
 		zcmd_free_nvlists(&zc);

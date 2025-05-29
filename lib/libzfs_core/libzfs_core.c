@@ -175,6 +175,7 @@ static int
 lzc_ioctl(zfs_ioc_t ioc, const char *name,
     nvlist_t *source, nvlist_t **resultp)
 {
+	fprintf(stdout, "%s\n", __func__);
 	zfs_cmd_t zc = {"\0"};
 	int error = 0;
 	char *packed = NULL;

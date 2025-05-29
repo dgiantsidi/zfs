@@ -1446,6 +1446,7 @@ zfsvfs_rele(zfsvfs_t *zfsvfs, const void *tag)
 static int
 zfs_ioc_pool_create(zfs_cmd_t *zc)
 {
+	zfs_dbgmsg("\n");
 	int error;
 	nvlist_t *config, *props = NULL;
 	nvlist_t *rootprops = NULL;
@@ -4432,6 +4433,19 @@ zfs_ioc_ddt_prune(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 	spa_close(spa, FTAG);
 
 	return (error);
+}
+
+
+static int
+zfs_ioc_uio_to_kernel(zfs_cmd_t *zc)
+{
+	static int count = 0;
+	zfs_dbgmsg("\n");
+	char* poolname = zc->zc_name;
+	zfs_dbgmsg(" poolname=%s\n", poolname);
+	strncpy(zc->zc_value, poolname, sizeof(zc->zc_name));
+	zc->zc_value[strlen(poolname)-2] = count++;
+	return 0;
 }
 
 /*
@@ -7527,13 +7541,21 @@ zfs_ioctl_init(void)
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE,
 	    zfs_keys_ddt_prune, ARRAY_SIZE(zfs_keys_ddt_prune));
 
+	
+
 	/* IOCTLS that use the legacy function signature */
+
+	
 
 	zfs_ioctl_register_legacy(ZFS_IOC_POOL_FREEZE, zfs_ioc_pool_freeze,
 	    zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_READONLY);
 
 	zfs_ioctl_register_pool(ZFS_IOC_POOL_CREATE, zfs_ioc_pool_create,
 	    zfs_secpolicy_config, B_TRUE, POOL_CHECK_NONE);
+	zfs_ioctl_register_pool(ZFS_IOC_UIO_TO_KERNEL,
+	    zfs_ioc_uio_to_kernel, zfs_secpolicy_config, B_TRUE,
+	    POOL_CHECK_NONE);
+
 	zfs_ioctl_register_pool_modify(ZFS_IOC_POOL_SCAN,
 	    zfs_ioc_pool_scan);
 	zfs_ioctl_register_pool_modify(ZFS_IOC_POOL_UPGRADE,
@@ -7969,6 +7991,8 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 	 * the lower layers.
 	 */
 	zc->zc_name[sizeof (zc->zc_name) - 1] = '\0';
+	zfs_dbgmsg(" pool/dataset name: %s\tvecnum=%d\n", zc->zc_name, vecnum);
+
 	switch (vec->zvec_namecheck) {
 	case POOL_NAME:
 		if (pool_namecheck(zc->zc_name, NULL, NULL) != 0)
