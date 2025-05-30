@@ -4435,16 +4435,27 @@ zfs_ioc_ddt_prune(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 	return (error);
 }
 
+static int invocations_count = 0;
 
 static int
-zfs_ioc_uio_to_kernel(zfs_cmd_t *zc)
+zfs_ioc_uio_to_kernel_get_cmt(zfs_cmd_t *zc)
 {
-	static int count = 0;
-	zfs_dbgmsg("\n");
+	invocations_count++;
 	char* poolname = zc->zc_name;
-	zfs_dbgmsg(" poolname=%s\n", poolname);
+	zfs_dbgmsg(" poolname=%s, invocations_count=%d\n", poolname, invocations_count);
 	strncpy(zc->zc_value, poolname, sizeof(zc->zc_name));
-	zc->zc_value[strlen(poolname)-2] = count++;
+//	zc->zc_value[strlen(poolname)-2] = '\0'; 
+	return 0;
+}
+
+static int
+zfs_ioc_uio_to_kernel_notify(zfs_cmd_t *zc)
+{
+	zfs_dbgmsg("\n");
+	int id;
+	memcpy(&id, zc->zc_value, sizeof(int));
+	zfs_dbgmsg(" commitment replicated=%d\n", id);
+	
 	return 0;
 }
 
@@ -7552,8 +7563,13 @@ zfs_ioctl_init(void)
 
 	zfs_ioctl_register_pool(ZFS_IOC_POOL_CREATE, zfs_ioc_pool_create,
 	    zfs_secpolicy_config, B_TRUE, POOL_CHECK_NONE);
-	zfs_ioctl_register_pool(ZFS_IOC_UIO_TO_KERNEL,
-	    zfs_ioc_uio_to_kernel, zfs_secpolicy_config, B_TRUE,
+
+	zfs_ioctl_register_pool(ZFS_IOC_UIO_TO_KERNEL_GET_CMTs,
+	    zfs_ioc_uio_to_kernel_get_cmt, zfs_secpolicy_none, B_TRUE,
+	    POOL_CHECK_NONE);
+
+	zfs_ioctl_register_pool(ZFS_IOC_UIO_TO_KERNEL_NOTIFY,
+	    zfs_ioc_uio_to_kernel_notify, zfs_secpolicy_none, B_TRUE,
 	    POOL_CHECK_NONE);
 
 	zfs_ioctl_register_pool_modify(ZFS_IOC_POOL_SCAN,
@@ -7958,9 +7974,11 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 	 * The registered ioctl list may be sparse, verify that either
 	 * a normal or legacy handler are registered.
 	 */
-	if (vec->zvec_func == NULL && vec->zvec_legacy_func == NULL)
+	if (vec->zvec_func == NULL && vec->zvec_legacy_func == NULL) {
+		zfs_dbgmsg("zfsdev_ioctl_common: "\
+		    "no handler registered for vecnum %d\n", vecnum);
 		return (SET_ERROR(ZFS_ERR_IOC_CMD_UNAVAIL));
-
+	}
 	zc->zc_iflags = flag & FKIOCTL;
 	max_nvlist_src_size = zfs_max_nvlist_src_size_os();
 	if (zc->zc_nvlist_src_size > max_nvlist_src_size) {
@@ -8030,12 +8048,15 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 	 * required pairs since zfs_check_input_nvpairs() confirmed that
 	 * they exist and are of the correct type.
 	 */
+	zfs_dbgmsg(" (1) pool/dataset name: %s\tvecnum=%d\n", zc->zc_name, vecnum);
+
 	if (error == 0 && vec->zvec_func != NULL) {
 		error = zfs_check_input_nvpairs(innvl, vec);
 		if (error != 0)
 			goto out;
 	}
 
+	zfs_dbgmsg(" (2) pool/dataset name: %s\tvecnum=%d\n", zc->zc_name, vecnum);
 	if (error == 0) {
 		cookie = spl_fstrans_mark();
 		error = vec->zvec_secpolicy(zc, innvl, CRED());
@@ -8045,6 +8066,7 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 	if (error != 0)
 		goto out;
 
+	zfs_dbgmsg(" (3) pool/dataset name: %s\tvecnum=%d\n", zc->zc_name, vecnum);
 	/* legacy ioctls can modify zc_name */
 	/*
 	 * Can't use kmem_strdup() as we might truncate the string and
@@ -8056,7 +8078,9 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 	strlcpy(saved_poolname, zc->zc_name, saved_poolname_len);
 	saved_poolname[strcspn(saved_poolname, "/@#")] = '\0';
 
+	zfs_dbgmsg(" (4) pool/dataset name: %s\tvecnum=%d\n", zc->zc_name, vecnum);
 	if (vec->zvec_func != NULL) {
+		zfs_dbgmsg(" vecnum=%d is not null\n", vecnum);
 		nvlist_t *outnvl;
 		int puterror = 0;
 		spa_t *spa;
@@ -8128,6 +8152,7 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 
 		nvlist_free(outnvl);
 	} else {
+		zfs_dbgmsg(" legacy vecnum=%d \n", vecnum);
 		cookie = spl_fstrans_mark();
 		error = vec->zvec_legacy_func(zc);
 		spl_fstrans_unmark(cookie);

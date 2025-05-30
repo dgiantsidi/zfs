@@ -1500,6 +1500,7 @@ zpool_is_draid_spare(const char *name)
 	return (B_FALSE);
 }
 
+static int count = 0;
 
 static void* get_commitments(void* poolname_v) {
 	libzfs_handle_t *hdl = NULL;
@@ -1510,10 +1511,22 @@ static void* get_commitments(void* poolname_v) {
 	zc_uio.zc_name[sizeof(zc_uio.zc_name) - 1] = '\0'; // Ensure null termination
 	printf("poolname=%s\n", poolname);
 	for (;;) {
-		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL, &zc_uio);
+		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL_GET_CMTs, &zc_uio);
 		printf(" output=%s\n", zc_uio.zc_value);
 		sleep(10);
+		zfs_cmd_t zc_uio = {"\0"};
+		memcpy(zc_uio.zc_name, poolname, strlen((char*)poolname_v));
+		memcpy(zc_uio.zc_value, &count, sizeof(count));
+		
+		printf(" before=%d\n", count);
+		count++;
+		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL_NOTIFY, &zc_uio);
+		int ret_val;
+		memcpy(&ret_val, zc_uio.zc_value, sizeof(ret_val));
+		printf(" after=%d\n", ret_val);
+
 	}
+	libzfs_fini(hdl);
 	return NULL;
 }
 
@@ -1542,10 +1555,7 @@ zpool_ccf(const char *pool)
 	return 0;
 }
 
-	// get_commitments(zc.zc_name);
-	// zfs_cmd_t zc_uio = zc;
-	// zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL, &zc_uio);
-	// printf(" output=%s\n", zc_uio.zc_value);
+
 
 /*
  * Create the named pool, using the provided vdev list.  It is assumed
