@@ -1513,7 +1513,7 @@ static void* get_commitments(void* poolname_v) {
 	for (;;) {
 		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL_GET_CMTs, &zc_uio);
 		printf(" output=%s\n", zc_uio.zc_value);
-		sleep(10);
+		sleep(10); // this is CCF-communication mocked
 		zfs_cmd_t zc_uio = {"\0"};
 		memcpy(zc_uio.zc_name, poolname, strlen((char*)poolname_v));
 		memcpy(zc_uio.zc_value, &count, sizeof(count));
