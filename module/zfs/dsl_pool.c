@@ -477,6 +477,8 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 
 	if (not_initialized == 1) {
 		not_initialized = 0;
+		init(&cksum_map);
+		mutex_init(&my_mutex, NULL, MUTEX_DEFAULT, NULL);
 		ccf_state_init(&ccf_zil_commitments);
 		zils_blocks_commitments.count = 0;
 		zils_blocks_commitments.cmt_data = NULL; 
@@ -603,7 +605,11 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 	dsl_dataset_name(os->os_dsl_dataset, name);
 	zil_header_t zh = os->os_phys->os_zil_header;
 	zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
+
+	mutex_enter(&my_mutex);
 	zio_cksum_t* blk_zc_eck = get_serialized_hash(&cksum_map, &(cur_block_cksum));
+	mutex_exit(&my_mutex);
+
 
 	zfs_dbgmsg(" [Dataset COMMITMENT os=%p (objset_count=%llu) name=%s\tzil_header] \
 		blk_seqno=%016llx:%016llx:%016llx:%016llx txg=%llu DVA=<%llu:%llx:%llx>     \

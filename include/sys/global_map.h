@@ -2,7 +2,10 @@
 #include <sys/zio_checksum.h>
 #include <sys/zil.h>
 #include <sys/map.h>
+#include <sys/zfs_context.h>
+
 
 extern C_map_t cksum_map;
 extern C_map_t recovery_map;
 
+extern kmutex_t my_mutex;

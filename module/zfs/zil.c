@@ -1766,7 +1766,9 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
 	
 
+	mutex_enter(&my_mutex);
 	zil_commitment_t* tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
+	mutex_exit(&my_mutex);
 	//dump_zil_commitment2(tail_commitment);
 	zil_tail_commitment = *tail_commitment;
 	//free_node(tail_commitment, sizeof(zil_commitment_t));

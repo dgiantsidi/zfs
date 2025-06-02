@@ -2204,7 +2204,10 @@ retry:
 	//ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	// ccf_state_get(&ccf_zil_commitments);
 	// ccf_state_cleanup(&ccf_zil_commitments);
-	cleanup_global_variable(&cksum_map);
+	mutex_enter(&my_mutex);
+	cleanup_global_variable(&cksum_map); // todo: remove this,
+	mutex_exit(&my_mutex);
+// ...  for the tail commitment we only need the previous one, not the txg all tail commitments ..
 
 	if (spa_multihost(spa))
 		mmp_update_uberblock(spa, ub);
