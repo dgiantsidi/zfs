@@ -684,11 +684,12 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	//dump_zil_commitment2(&zil_tail_commitment);
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
-	
-	zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d [(!BP_IS_EMBEDDED(bp)=%d && DVA_IS_EMPTY(BP_IDENTITY(bp))=%d)] (start_blk=%llu, end_blk=%llu)\n",\
-		remount, BP_IS_HOLE(&(zh->zh_log)), (!BP_IS_EMBEDDED(&(zh->zh_log))), DVA_IS_EMPTY(BP_IDENTITY(&(zh->zh_log))), \
-		(u_longlong_t)starting_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
-		(u_longlong_t)final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+	if (starting_blk_cmt != NULL && final_blk_cmt != NULL) {
+		zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d [(!BP_IS_EMBEDDED(bp)=%d && DVA_IS_EMPTY(BP_IDENTITY(bp))=%d)] (start_blk=%llu, end_blk=%llu)\n",\
+			remount, BP_IS_HOLE(&(zh->zh_log)), (!BP_IS_EMBEDDED(&(zh->zh_log))), DVA_IS_EMPTY(BP_IDENTITY(&(zh->zh_log))), \
+			(u_longlong_t)starting_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
+			(u_longlong_t)final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+	}
 	
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
@@ -707,27 +708,29 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			first_block = 0;
 			// todo: these are supposed to be initialized from CCF
 			init(&recovery_map);
-			zc_eck first_val =  get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
-			zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
-			final_blk_cmt->blk_digest = tail_hash;
-			append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
+			if (starting_blk_cmt != NULL && final_blk_cmt != NULL) {
+				zc_eck first_val =  get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
+				zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
+				final_blk_cmt->blk_digest = tail_hash;
+				append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
 			
-			// @dimitra todo: compare commitments at the calculation (zio_compute.c)
-			if (starting_blk_cmt != NULL) {
-				if (memcmp(blk.blk_cksum.zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
-					zfs_dbgmsg(" zil headers match\n");
-				}
-				else {
-					zfs_dbgmsg(" error, zil headers *not* match ..\n\
-						blk.blk_cksum.zc_word=%016llx:%016llx:%016llx:%016llx,\
-						starting_blk_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n",\
-						(u_longlong_t)blk.blk_cksum.zc_word[0], (u_longlong_t)blk.blk_cksum.zc_word[1], \
-						(u_longlong_t)blk.blk_cksum.zc_word[2], (u_longlong_t)blk.blk_cksum.zc_word[3], \
-						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[0], \
-						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[1], \
-						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[2], \
-						(u_longlong_t)starting_blk_cmt->blk_num.zc_word[3]);
-					// todo: @dimitra, abort here
+				// @dimitra todo: compare commitments at the calculation (zio_compute.c)
+				if (starting_blk_cmt != NULL) {
+					if (memcmp(blk.blk_cksum.zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
+						zfs_dbgmsg(" zil headers match\n");
+					}
+					else {
+						zfs_dbgmsg(" error, zil headers *not* match ..\n\
+							blk.blk_cksum.zc_word=%016llx:%016llx:%016llx:%016llx,\
+							starting_blk_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n",\
+							(u_longlong_t)blk.blk_cksum.zc_word[0], (u_longlong_t)blk.blk_cksum.zc_word[1], \
+							(u_longlong_t)blk.blk_cksum.zc_word[2], (u_longlong_t)blk.blk_cksum.zc_word[3], \
+							(u_longlong_t)starting_blk_cmt->blk_num.zc_word[0], \
+							(u_longlong_t)starting_blk_cmt->blk_num.zc_word[1], \
+							(u_longlong_t)starting_blk_cmt->blk_num.zc_word[2], \
+							(u_longlong_t)starting_blk_cmt->blk_num.zc_word[3]);
+						// todo: @dimitra, abort here
+					}
 				}
 			}
 		}

@@ -230,6 +230,9 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	   else {
 		   zfs_dbgmsg( " ERROR, zil headers do not match!\n");
 	   }
+	
+	   if (starting_blk_cmt != NULL && final_blk_cmt != NULL) {
+
 	   zc_eck first_val =  get_hash(&recovery_map, &(starting_blk_cmt->blk_num));
 	   abd_checksum_sha512_native(abd, size, ctx_template, zcp);
 
@@ -239,6 +242,11 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	   zcp->zc_word[2] = first_val.zc_word[2];
 	   zcp->zc_word[3] = first_val.zc_word[3];
 	   // todo: check that the computed hash equals the stored in the map (check the starting point is correct)
+	   }
+	   else {
+					   zfs_dbgmsg(" starting_blk_cmt or final_blk_cmt is NULL, cannot compute the hash\n");
+
+	   }
    }
    else {
 	   zfs_dbgmsg(" It is a middle blk (or the tail), there is previous\
@@ -259,17 +267,20 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	   free_node(blk_content, size);
 	   abd_free(acc_hash);
 
-	   // todo: check that the tail is also ok
-	   if (memcmp(final_blk_cmt->blk_num.zc_word, zilc->zc_eck.zec_cksum.zc_word, sizeof(zio_cksum_t)) == 0) {
-		   zfs_dbgmsg( " This is the tail of the zil ... blk=%llu\n", (u_longlong_t)cur_block_cksum->zc_word[ZIL_ZC_SEQ]);
-		   if (memcmp(zcp->zc_word, final_blk_cmt->blk_digest.zc_word,\
-				sizeof(final_blk_cmt->blk_digest)) == 0) {
-			   zfs_dbgmsg( " zil hash-chain is verified ...\n");
-		   }
-		   else {
-			   zfs_dbgmsg( " Error, zil hash-chain is *not* verified ...\n");
-		   }
-	   }
+
+	   if (starting_blk_cmt != NULL && final_blk_cmt != NULL) {
+		// todo: check that the tail is also ok
+		if (memcmp(final_blk_cmt->blk_num.zc_word, zilc->zc_eck.zec_cksum.zc_word, sizeof(zio_cksum_t)) == 0) {
+			zfs_dbgmsg( " This is the tail of the zil ... blk=%llu\n", (u_longlong_t)cur_block_cksum->zc_word[ZIL_ZC_SEQ]);
+			if (memcmp(zcp->zc_word, final_blk_cmt->blk_digest.zc_word,\
+					sizeof(final_blk_cmt->blk_digest)) == 0) {
+				zfs_dbgmsg( " zil hash-chain is verified ...\n");
+			}
+			else {
+				zfs_dbgmsg( " Error, zil hash-chain is *not* verified ...\n");
+			}
+		}
+	}
    }
    append_hash(&recovery_map, cur_block_cksum, zcp, BP_GET_LOGICAL_BIRTH(&zilc->zc_next_blk));
    // print(&recovery_map);
