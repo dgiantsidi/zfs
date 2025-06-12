@@ -60,6 +60,8 @@
 
 #include <linux/netlink.h>
 #include <sys/socket.h>
+#include <sys/zfs_context.h>
+
 
 static boolean_t zpool_vdev_is_interior(const char *name);
 
@@ -1512,9 +1514,11 @@ static int count = 0;
 
 static char message[MAX_PAYLOAD];
 static int counter = 0; // static to retain value between calls
+
 static int current_msg_size = MAX_PAYLOAD;
 
-static char *get_message(const char* poolname) {
+
+__attribute__((unused)) static char *get_message(const char* poolname) {
   char tmp_message[MAX_PAYLOAD];
   memset(tmp_message, '1', MAX_PAYLOAD);
   memcpy(message, tmp_message, current_msg_size);
@@ -1522,6 +1526,39 @@ static char *get_message(const char* poolname) {
   message[current_msg_size - 1] = '\0';
   // printf(message, MAX_PAYLOAD, "%d", counter);
   return message;
+}
+
+#define HEX_PER_UINT8_SZ sizeof(int)
+#define ZIL_COMMITMENT_SIZE SHA256_DIGEST_LENGTH * HEX_PER_UINT8_SZ + 1 /* end-of-array */
+
+enum request_type {
+	REQUEST_TYPE_GET_COMMITMENT = 0,
+	REQUEST_TYPE_NOTIFY_ZIL
+};
+
+struct userspace_to_kernel_msg {
+	int request_id; // Unique ID for the request
+	int req_type;
+	char poolname[ZFS_MAX_DATASET_NAME_LEN];
+	char digest[ZIL_COMMITMENT_SIZE]; // to be calculated on the serialized zil_header data
+	zio_cksum_t blk_num;
+};
+
+static char *construct_notify_msg_type(const char* poolname) {
+	char* tmp_message = (char*)malloc(sizeof(struct userspace_to_kernel_msg));
+	struct userspace_to_kernel_msg msg;
+	msg.request_id = counter;
+	msg.req_type = REQUEST_TYPE_NOTIFY_ZIL;
+	strncpy(msg.poolname, poolname, strlen(poolname));
+	// todo: maybe add the blk_num here
+	return tmp_message;
+}
+
+__attribute__((unused))  static struct userspace_to_kernel_msg* destruct_msg(const char* msg) {
+	struct userspace_to_kernel_msg* tmp_struct = malloc(sizeof(struct userspace_to_kernel_msg));
+	// todo: implement me
+	(void)msg; // to avoid unused parameter warning
+	return tmp_struct;
 }
 
 static void* get_commitments(void* poolname_v) {
@@ -1555,11 +1592,11 @@ static void* get_commitments(void* poolname_v) {
 	#endif
 
 	struct sockaddr_nl src_addr;
-  struct sockaddr_nl dest_addr;
-  struct nlmsghdr *nlh;
-  struct msghdr msg;
-  struct iovec iov;
-  int rc;
+  	struct sockaddr_nl dest_addr;
+  	struct nlmsghdr *nlh;
+  	struct msghdr msg;
+  	struct iovec iov;
+  	int rc;
 
   
 
@@ -1576,7 +1613,7 @@ static void* get_commitments(void* poolname_v) {
   bind(sock_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
 
     
-  char *my_msg;
+  char *my_msg = NULL;
   struct timespec start, end;
   long long elapsed_ns;
 
@@ -1611,7 +1648,8 @@ static void* get_commitments(void* poolname_v) {
     nlh->nlmsg_pid = getpid(); /* self pid */
     nlh->nlmsg_flags = 0;
 
-    my_msg = get_message(poolname);
+    // my_msg = get_message(poolname);
+	my_msg = construct_notify_msg_type(poolname);
     /* Fill in the netlink message payload */
     strcpy(NLMSG_DATA(nlh), my_msg);
 
@@ -1648,6 +1686,7 @@ static void* get_commitments(void* poolname_v) {
     	return NULL;
     }
     counter++;
+	free(my_msg);
 
     // printf("Received from kernel: %s\n", NLMSG_DATA(nlh));
     free(nlh);
