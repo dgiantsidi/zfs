@@ -1550,33 +1550,7 @@ __attribute__((unused))  static struct userspace_to_kernel_msg* destruct_msg(con
 
 static void* get_commitments(void* poolname_v) {
 	const char* poolname = (const char*)poolname_v;
-
-	#if 0
-	libzfs_handle_t *hdl = NULL;
-	hdl = libzfs_init();
-
-	zfs_cmd_t zc_uio = {"\0"};
-	memcpy(zc_uio.zc_name, poolname, strlen((char*)poolname_v));
-	zc_uio.zc_name[sizeof(zc_uio.zc_name) - 1] = '\0'; // Ensure null termination
-	printf("poolname=%s\n", poolname);
-	for (;;) {
-		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL_GET_CMTs, &zc_uio);
-		printf(" output=%s\n", zc_uio.zc_value);
-		sleep(10); // this is CCF-communication mocked
-		zfs_cmd_t zc_uio = {"\0"};
-		memcpy(zc_uio.zc_name, poolname, strlen((char*)poolname_v));
-		memcpy(zc_uio.zc_value, &count, sizeof(count));
-		
-		printf(" before=%d\n", count);
-		count++;
-		zfs_ioctl(hdl, ZFS_IOC_UIO_TO_KERNEL_NOTIFY, &zc_uio);
-		int ret_val;
-		memcpy(&ret_val, zc_uio.zc_value, sizeof(ret_val));
-		printf(" after=%d\n", ret_val);
-
-	}
-	libzfs_fini(hdl);
-	#endif
+	printf("[1] %s\n", __func__);
 
 	struct sockaddr_nl src_addr;
   	struct sockaddr_nl dest_addr;
@@ -1587,97 +1561,102 @@ static void* get_commitments(void* poolname_v) {
 
   
 
-  int sock_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_TEST);
-  if (sock_fd < 0) {
-    printf("socket: %s\n", strerror(errno));
-    return NULL;
-  }
-
-  memset(&src_addr, 0, sizeof(src_addr));
-  src_addr.nl_family = AF_NETLINK;
-  src_addr.nl_pid = getpid(); /* self pid */
-  src_addr.nl_groups = 0;     /* not in mcast groups */
-  bind(sock_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
-
-    
-  char *my_msg = NULL;
-  struct timespec start, end;
-  long long elapsed_ns;
-
-  // Get start time
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (;;) {
-    if (counter == TOTAL_OPS) {
-      break;
-    }
-	if (counter % 1000000 == 0) {
-		// Get end time
-		clock_gettime(CLOCK_MONOTONIC, &end);
-
-		// Calculate elapsed time in seconds
-		elapsed_ns =
-			(end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
-		double latency_us = (elapsed_ns / 1e3) / 1e6; // Convert to microseconds
-		printf("[RUN %d] Elapsed time: %llu  nanoseconds (latency per operation = %f us), "
-			"msg_size=%lu\n", counter,
-			elapsed_ns, latency_us, strlen(my_msg));
- 	   clock_gettime(CLOCK_MONOTONIC, &start);
+	int sock_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_TEST);
+	if (sock_fd < 0) {
+		printf("socket: %s\n", strerror(errno));
+		return NULL;
 	}
-    memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.nl_family = AF_NETLINK;
-    dest_addr.nl_pid = 0;    /* For Linux Kernel */
-    dest_addr.nl_groups = 0; /* unicast */
+	printf("[2] %s\n", __func__);
+	memset(&src_addr, 0, sizeof(src_addr));
+	src_addr.nl_family = AF_NETLINK;
+	src_addr.nl_pid = getpid(); /* self pid */
+	src_addr.nl_groups = 0;     /* not in mcast groups */
+	bind(sock_fd, (struct sockaddr *)&src_addr, sizeof(src_addr));
+	printf("[3] %s\n", __func__);
 
-    nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
+	char *my_msg = NULL;
+	struct timespec start, end;
+	long long elapsed_ns;
 
-    /* Fill the netlink message header */
-    nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
-    nlh->nlmsg_pid = getpid(); /* self pid */
-    nlh->nlmsg_flags = 0;
+	// Get start time
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	for (;;) {
+		if (counter == TOTAL_OPS) {
+			break;
+		}
+		if (counter % 1000000 == 0) {
+			// Get end time
+			clock_gettime(CLOCK_MONOTONIC, &end);
 
-    // my_msg = get_message(poolname);
-	my_msg = construct_notify_msg_type(poolname);
-    /* Fill in the netlink message payload */
-    strcpy(NLMSG_DATA(nlh), my_msg);
+			// Calculate elapsed time in seconds
+			elapsed_ns =
+				(end.tv_sec - start.tv_sec) * 1e9 + (end.tv_nsec - start.tv_nsec);
+			double latency_us = (elapsed_ns / 1e3) / 1e6; // Convert to microseconds
+			printf("[RUN %d] Elapsed time: %llu  nanoseconds (latency per operation = %f us), "
+				"msg_size=%lu\n", counter,
+				elapsed_ns, latency_us, strlen(my_msg));
+			clock_gettime(CLOCK_MONOTONIC, &start);
+		}
 
-    memset(&iov, 0, sizeof(iov));
-    iov.iov_base = (void *)nlh;
-    iov.iov_len = nlh->nlmsg_len;
+		memset(&dest_addr, 0, sizeof(dest_addr));
+		dest_addr.nl_family = AF_NETLINK;
+		dest_addr.nl_pid = 0;    /* For Linux Kernel */
+		dest_addr.nl_groups = 0; /* unicast */
+		printf("[4] %s\n", __func__);
 
-    memset(&msg, 0, sizeof(msg));
-    msg.msg_name = (void *)&dest_addr;
-    msg.msg_namelen = sizeof(dest_addr);
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
+		nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
 
-    // printf("Send to kernel: %s\n", my_msg);
+		/* Fill the netlink message header */
+		nlh->nlmsg_len = NLMSG_SPACE(sizeof(struct userspace_to_kernel_msg));
+		//    nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
 
-    rc = sendmsg(sock_fd, &msg, 0);
-    if (rc < 0) {
-      printf("sendmsg(): %s\n", strerror(errno));
-      close(sock_fd);
-    	return NULL;
-    }
+		nlh->nlmsg_pid = getpid(); /* self pid */
+		nlh->nlmsg_flags = 0;
 
-    /* Read message from kernel */
-    memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+		// my_msg = get_message(poolname);
+		my_msg = construct_notify_msg_type(poolname);
+		/* Fill in the netlink message payload */
+		strcpy(NLMSG_DATA(nlh), my_msg);
+		printf("[5] %s\n", __func__);
 
-    rc = recvmsg(sock_fd, &msg, 0);
-    if (rc < 0) {
-      printf("sendmsg(): %s\n", strerror(errno));
-      close(sock_fd);
-    	return NULL;
-    }
-    if (memcmp(NLMSG_DATA(nlh), my_msg, strlen(my_msg)) != 0) {
-      printf("Received message does not match sent message.\n");
-    	return NULL;
-    }
-    counter++;
-	free(my_msg);
+		memset(&iov, 0, sizeof(iov));
+		iov.iov_base = (void *)nlh;
+		iov.iov_len = nlh->nlmsg_len;
 
-    // printf("Received from kernel: %s\n", NLMSG_DATA(nlh));
-    free(nlh);
-  }
+		memset(&msg, 0, sizeof(msg));
+		msg.msg_name = (void *)&dest_addr;
+		msg.msg_namelen = sizeof(dest_addr);
+		msg.msg_iov = &iov;
+		msg.msg_iovlen = 1;
+
+		printf("Send to kernel\n");
+
+		rc = sendmsg(sock_fd, &msg, 0);
+		if (rc < 0) {
+		printf("sendmsg(): %s\n", strerror(errno));
+		close(sock_fd);
+			return NULL;
+		}
+
+		/* Read message from kernel */
+		memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+		printf("just before recv to kernel\n");
+		rc = recvmsg(sock_fd, &msg, 0);
+		if (rc < 0) {
+		printf("sendmsg(): %s\n", strerror(errno));
+		close(sock_fd);
+			return NULL;
+		}
+		if (memcmp(NLMSG_DATA(nlh), my_msg, strlen(my_msg)) != 0) {
+		printf("Received message does not match sent message.\n");
+			return NULL;
+		}
+		counter++;
+		free(my_msg);
+
+		// printf("Received from kernel: %s\n", NLMSG_DATA(nlh));
+		free(nlh);
+		}
 
 	return NULL;
 }
