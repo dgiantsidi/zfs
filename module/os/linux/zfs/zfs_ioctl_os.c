@@ -327,6 +327,22 @@ int thread_id = 0;
 
 struct sock *nl_sock = NULL;
 
+static userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg_size) {
+	struct userspace_to_kernel_msg* msg_data = kmalloc(sizeof(struct userspace_to_kernel_msg), GFP_KERNEL);
+	if (msg_data == NULL) {
+		printk(KERN_ERR "netlink_test: Failed to allocate memory for message data\n");
+		return NULL;
+	}
+	int offset = 0;
+	memcpy(msg_data, msg+offset, sizeof(userspace_to_kernel_msg.request_id));
+	offset += sizeof(userspace_to_kernel_msg.request_id);
+	memcpy(msg_data, msg+offset, sizeof(userspace_to_kernel_msg.req_type));
+	offset += sizeof(userspace_to_kernel_msg.req_type);
+	memcpy(msg_data, msg+offset, sizeof(userspace_to_kernel_msg.req_type));
+
+	  
+}
+
 static void netlink_test_recv_msg(struct sk_buff *skb) {
   struct sk_buff *skb_out;
   struct nlmsghdr *nlh;
@@ -344,7 +360,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   //   msg=%d\n", msg_size);
   // return;
   //}
-
+  struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
   // printk(KERN_INFO "netlink_test: Received from pid %d: [thread_id:%d]\n",
   // pid, current->pid);
 
