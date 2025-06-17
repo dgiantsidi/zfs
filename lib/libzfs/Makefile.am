@@ -58,9 +58,9 @@ libzfs_la_LIBADD = \
 	libzutil.la \
 	libuutil.la
 
-libzfs_la_LIBADD += -lrt -lm $(LIBCRYPTO_LIBS) $(ZLIB_LIBS) $(LIBFETCH_LIBS) $(LTLIBINTL)
+libzfs_la_LIBADD += -lrt -lm   $(LIBCRYPTO_LIBS) $(ZLIB_LIBS) $(LIBFETCH_LIBS) $(LTLIBINTL)
 
-libzfs_la_LDFLAGS = -pthread
+libzfs_la_LDFLAGS = -pthread $(LIBCLOCK_GETTIME) -lrt
 
 if !ASAN_ENABLED
 libzfs_la_LDFLAGS += -Wl,-z,defs

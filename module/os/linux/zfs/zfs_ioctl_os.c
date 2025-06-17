@@ -328,7 +328,7 @@ int thread_id = 0;
 
 struct sock *nl_sock = NULL;
 
-static struct userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg_size) {
+__attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg_size) {
 	struct userspace_to_kernel_msg* msg_data = kmalloc(sizeof(struct userspace_to_kernel_msg), GFP_KERNEL);
 	if (msg_data == NULL) {
 		printk(KERN_ERR "netlink_test: Failed to allocate memory for message data\n");
@@ -337,7 +337,7 @@ static struct userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg
 	int offset = 0;
 	
 	memcpy(&(msg_data->request_id), msg+offset, sizeof(msg_data->request_id));
-	//offset += sizeof(msg_data->request_id);
+	offset += sizeof(msg_data->request_id);
 	memcpy(&(msg_data->req_type), msg+offset, sizeof(msg_data->req_type));
 	offset += sizeof(msg_data->req_type);
 	memcpy(msg_data->poolname, msg+offset, sizeof(msg_data->poolname));
@@ -352,16 +352,19 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   char *msg;
   int pid;
   int res;
+  //hrtime_t end_ts = gethrtime();
+  //printk(KERN_INFO "[3] %s %llu\n", __func__, end_ts);
 
   nlh = (struct nlmsghdr *)skb->data;
   pid = nlh->nlmsg_pid; /* pid of sending process */
   msg = (char *)nlmsg_data(nlh);
   msg_size = strlen(msg);
-  printk(KERN_INFO "netlink_test: Received request_id\n");
-  struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
-  printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", \
-	msg_data->request_id, msg_data->poolname);
+  //printk(KERN_INFO "netlink_test: Received request_id\n");
+  //struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
+  //printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", 
+	//msg_data->request_id, msg_data->poolname);
   // pid, current->pid);
+  
 
   // create reply
   skb_out = nlmsg_new(msg_size, 0);
