@@ -6,6 +6,11 @@
 
 extern dyn_array_commitments_t zils_blocks_commitments;
 
+extern kcondvar_t	zil_thread_cv;		/* signalled when "done" */
+extern kcondvar_t	ccf_thread_cv;		/* signalled when "done" */
+extern kmutex_t	    ccf_lock;	/* protects fields of this struct */
+extern kmutex_t	    zil_thread_lock;	/* protects fields of this struct */
+extern kmutex_t	    ccf_thread_lock;	/* protects fields of this struct */
 
 extern dyn_array_commitments_t* ccf_zil_header_commitments;
 extern dyn_array_commitments_t* ccf_zil_tail_commitments;

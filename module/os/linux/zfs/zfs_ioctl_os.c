@@ -75,6 +75,8 @@
 #include <net/sock.h>
 
 #include <sys/netlink_layer.h>
+#include <sys/global_commitment_map.h>
+
 boolean_t
 zfs_vfs_held(zfsvfs_t *zfsvfs)
 {
@@ -344,6 +346,7 @@ __attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_m
 
 	return msg_data;  
 }
+static zil_commitment_t* prev_tail_cmt = NULL;
 
 static void netlink_test_recv_msg(struct sk_buff *skb) {
   struct sk_buff *skb_out;
@@ -352,19 +355,44 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   char *msg;
   int pid;
   int res;
-  //hrtime_t end_ts = gethrtime();
-  //printk(KERN_INFO "[3] %s %llu\n", __func__, end_ts);
 
   nlh = (struct nlmsghdr *)skb->data;
   pid = nlh->nlmsg_pid; /* pid of sending process */
   msg = (char *)nlmsg_data(nlh);
   msg_size = strlen(msg);
   //printk(KERN_INFO "netlink_test: Received request_id\n");
-  //struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
-  //printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", 
-	//msg_data->request_id, msg_data->poolname);
-  // pid, current->pid);
-  
+  struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
+  printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
+  zil_commitment_t* tail_cmt;
+  cv_broadcast(&zil_thread_cv);
+  for (;;) {
+	printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+	mutex_enter(&ccf_lock);
+	tail_cmt = get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
+	if (tail_cmt == prev_tail_cmt && prev_tail_cmt != NULL) {
+		cv_wait(&ccf_thread_cv, &ccf_lock);	
+		mutex_exit(&ccf_lock);
+	}else {
+		prev_tail_cmt = tail_cmt;
+		mutex_exit(&ccf_lock);
+
+		break;
+	}
+  }
+  printk(KERN_INFO "netlink_test: Reply for request_id: %d\n", msg_data->request_id);
+ 
+  /*
+   * (0) cv.broadcast() 
+   * (1) take lock for commitment
+   * (2) get tail commitment for the pool 
+	     zil_commitment_t* tail_cmt = get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
+   * (3) if tail cmt == prev_tail_cmt	
+   * 	(4) cv.wait()
+   * (5) respond to user space
+   */
+
+
+  //zil_commitment_t* head_cmt = get_zil_head_cmt_for_dsl(msg_data->poolname, ccf_zil_head_commitments);
 
   // create reply
   skb_out = nlmsg_new(msg_size, 0);
@@ -417,6 +445,13 @@ openzfs_init_os(void)
 	zfs_init_idmap = (zidmap_t *)zfs_get_init_idmap();
 	printk(KERN_NOTICE "netlink_test: Init module\n");
   	
+	cv_init(&zil_thread_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&ccf_thread_cv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&ccf_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&zil_thread_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&ccf_thread_lock, NULL, MUTEX_DEFAULT, NULL);
+
+
 
   	struct netlink_kernel_cfg cfg = {
     	.input = netlink_test_recv_msg,
@@ -438,7 +473,11 @@ openzfs_fini_os(void)
 	zfs_sysfs_fini();
 	zfs_kmod_fini();
 	netlink_kernel_release(nl_sock);
-
+	cv_destroy(&zil_thread_cv);
+	cv_destroy(&ccf_thread_cv);
+	mutex_destroy(&ccf_lock);
+	mutex_destroy(&zil_thread_lock);
+	mutex_destroy(&ccf_thread_lock);
 	printk(KERN_NOTICE "ZFS: Unloaded module v%s-%s%s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR);
 }

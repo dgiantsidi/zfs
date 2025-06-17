@@ -1766,19 +1766,31 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
 	
 
-	zil_commitment_t* tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
+	zil_commitment_t* tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg,\
+		lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
 	//dump_zil_commitment2(tail_commitment);
 	zil_tail_commitment = *tail_commitment;
-	//free_node(tail_commitment, sizeof(zil_commitment_t));
+
+	/*
+	 * (0) take lock for commitment
+	 * (1) produce cmt
+	 * (2) unlock the commitment
+	 * (3) wake up (cv.brodcast()) the kernel thread
+	 * (4) cv.wait() for the kernel thread to finish
+	 */
+	mutex_enter(&ccf_lock);
+    zil_tail_commitment = *tail_commitment;
+
 	zfs_dbgmsg(" **** tail_commitment start ****\n");
-	// dump_zil_commitment2(&zil_tail_commitment);
-	// append_cmts(ccf_zil_tail_commitments, tail_commitment);
-	//ccf_state_append(&ccf_zil_commitments, tail_commitment);
-	//ccf_state_get(&ccf_zil_commitments);
 	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
-	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
 	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	zfs_dbgmsg(" **** tail_commitment end ****\n");
+	
+	mutex_exit(&ccf_lock);	
+	cv_broadcast(&ccf_thread_cv);
+	mutex_enter(&zil_thread_lock);
+	cv_wait(&zil_thread_cv, &zil_thread_lock);
+	mutex_exit(&zil_thread_lock);
 
 	while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)
 		zil_itx_destroy(itx);
