@@ -1511,7 +1511,7 @@ static int count = 0;
 #endif
 #define MAX_PAYLOAD 1024 /* maximum payload size */
 #define NETLINK_TEST 17
-#define TOTAL_OPS 100
+#define TOTAL_OPS 100000000 
 
 static char message[MAX_PAYLOAD];
 static int counter = 0; // static to retain value between calls
@@ -1529,10 +1529,30 @@ __attribute__((unused)) static char *get_message(const char* poolname) {
   return message;
 }
 
+__attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg_size) {
+	struct userspace_to_kernel_msg* msg_data = malloc(sizeof(struct userspace_to_kernel_msg));
+	if (msg_data == NULL) {
+		printf("netlink_test: Failed to allocate memory for message data\n");
+		return NULL;
+	}
+	int offset = 0;
+	printf("netlink_test: Decoding message of size %ld, offset %d\n", msg_size, offset);
+	
+	memcpy(&(msg_data->request_id), msg+offset, sizeof(msg_data->request_id));
+	offset += sizeof(msg_data->request_id);
+	memcpy(&(msg_data->req_type), msg+offset, sizeof(msg_data->req_type));
+	offset += sizeof(msg_data->req_type);
+	msg_size -= offset;
+	printf( "netlink_test: Decoding message of size %ld, offset %d\n", msg_size, offset);
 
+	memcpy(msg_data->poolname, msg+offset, ZFS_MAX_DATASET_NAME_LEN);
+	printf("->%s\n", msg_data->poolname);
+
+	return msg_data;  
+}
 
 static char *construct_notify_msg_type(const char* poolname) {
-	char* tmp_message = (char*)malloc(sizeof(struct userspace_to_kernel_msg)+1);
+	char* tmp_message = (char*)malloc(sizeof(struct userspace_to_kernel_msg));
 	int offset = 0 ;
 	memcpy(tmp_message, &counter, sizeof(int));
 	offset += sizeof(int);
@@ -1541,6 +1561,7 @@ static char *construct_notify_msg_type(const char* poolname) {
 	offset += sizeof(int);
 	//printf("Constructing message for pool: %s\n", poolname);
 	memcpy(tmp_message + offset, poolname, strlen(poolname));
+	//printf("Constructing message for pool: %s\n", (tmp_message + offset));
 	//tmp_message[sizeof(struct userspace_to_kernel_msg)] = '\0'; // Ensure null termination
 	// todo: maybe add the blk_num here
 	return tmp_message;
@@ -1623,12 +1644,16 @@ static void* get_commitments(void* poolname_v) {
 		// my_msg = get_message(poolname);
 		my_msg = construct_notify_msg_type(poolname);
 		/* Fill in the netlink message payload */
-		strcpy(NLMSG_DATA(nlh), my_msg);
-//		printf("[5] %s\n", __func__);
-
+		// strcpy(NLMSG_DATA(nlh), my_msg);
+		memcpy(NLMSG_DATA(nlh), my_msg,sizeof(struct userspace_to_kernel_msg));  
+		// struct userspace_to_kernel_msg* structured_msg =  decode_received_msg(NLMSG_DATA(nlh), sizeof(struct userspace_to_kernel_msg));
+		//printf("%s structured_msg->poolname: %s (strlen(my_msg)=%ld)\n", __func__, structured_msg->poolname, strlen(my_msg));
 		memset(&iov, 0, sizeof(iov));
 		iov.iov_base = (void *)nlh;
 		iov.iov_len = nlh->nlmsg_len;
+		// printf("%s structured_msg->poolname: %s (len=%u)\n", __func__, structured_msg->poolname, nlh->nlmsg_len);
+		// free(structured_msg);
+
 
 		memset(&msg, 0, sizeof(msg));
 		msg.msg_name = (void *)&dest_addr;

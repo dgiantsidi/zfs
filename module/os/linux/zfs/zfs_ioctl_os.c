@@ -330,19 +330,29 @@ int thread_id = 0;
 
 struct sock *nl_sock = NULL;
 
-__attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_msg(char* msg, size_t msg_size) {
+__attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_msg(char* msg, int msg_size) {
 	struct userspace_to_kernel_msg* msg_data = kmalloc(sizeof(struct userspace_to_kernel_msg), GFP_KERNEL);
 	if (msg_data == NULL) {
 		printk(KERN_ERR "netlink_test: Failed to allocate memory for message data\n");
 		return NULL;
 	}
 	int offset = 0;
-	
+	//printk(KERN_ERR "netlink_test: Decoding message of size %d, offset %d\n", msg_size, offset);
+
 	memcpy(&(msg_data->request_id), msg+offset, sizeof(msg_data->request_id));
 	offset += sizeof(msg_data->request_id);
 	memcpy(&(msg_data->req_type), msg+offset, sizeof(msg_data->req_type));
 	offset += sizeof(msg_data->req_type);
-	memcpy(msg_data->poolname, msg+offset, sizeof(msg_data->poolname));
+	msg_size -= offset;
+	//printk(KERN_ERR "netlink_test: Decoding message of size %d, offset %d\n", msg_size, offset);
+	memcpy(msg_data->poolname, msg+offset, ZFS_MAX_DATASET_NAME_LEN);
+	for (int i = 0; i < ZFS_MAX_DATASET_NAME_LEN; i++) {
+		if (msg_data->poolname[i] == '\0') {
+			break;
+		}
+		//printk(KERN_INFO "->%c", msg_data->poolname[i]);
+	}
+	//printk(KERN_ERR "\n->%s\n", msg_data->poolname);
 
 	return msg_data;  
 }
@@ -360,13 +370,13 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   pid = nlh->nlmsg_pid; /* pid of sending process */
   msg = (char *)nlmsg_data(nlh);
   msg_size = strlen(msg);
-  //printk(KERN_INFO "netlink_test: Received request_id\n");
-  struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, msg_size);
-  printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
+  //printk(KERN_INFO "netlink_test: Received request msg_size:%d\n", nlh->nlmsg_len);
+  struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, sizeof(struct userspace_to_kernel_msg));
+  //printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
   zil_commitment_t* tail_cmt;
   cv_broadcast(&zil_thread_cv);
   for (;;) {
-	printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+	//printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
 	mutex_enter(&ccf_lock);
 	tail_cmt = get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
 	if (tail_cmt == prev_tail_cmt && prev_tail_cmt != NULL) {
@@ -375,11 +385,12 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 	}else {
 		prev_tail_cmt = tail_cmt;
 		mutex_exit(&ccf_lock);
-
 		break;
 	}
   }
-  printk(KERN_INFO "netlink_test: Reply for request_id: %d\n", msg_data->request_id);
+  if (tail_cmt == NULL) {
+  	// printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s returns NULL\n", msg_data->request_id, msg_data->poolname);
+  }
  
   /*
    * (0) cv.broadcast() 
@@ -391,7 +402,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
    * (5) respond to user space
    */
 
-
+  kfree(msg_data);
   //zil_commitment_t* head_cmt = get_zil_head_cmt_for_dsl(msg_data->poolname, ccf_zil_head_commitments);
 
   // create reply
