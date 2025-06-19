@@ -1511,7 +1511,7 @@ static int count = 0;
 #endif
 #define MAX_PAYLOAD 1024 /* maximum payload size */
 #define NETLINK_TEST 17
-#define TOTAL_OPS 100000000 
+#define TOTAL_OPS 10 
 
 static char message[MAX_PAYLOAD];
 static int counter = 0; // static to retain value between calls
