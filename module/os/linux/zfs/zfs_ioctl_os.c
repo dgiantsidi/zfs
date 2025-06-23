@@ -383,8 +383,8 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 		mutex_exit(&ccf_lock);
 		break;
 	}
-	else if (tail_cmt->blk_digest.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_digest.zc_word[ZIL_ZC_SEQ]) {
-		printk(KERN_INFO "netlink_test: same_blk_id pool: %s (request_id: %d) block_num=%llu\n", tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_digest.zc_word[3]);
+	else if (tail_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
+		printk(KERN_INFO "netlink_test: same_blk_id pool: %s (request_id: %d) block_id=%llu\n", tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_num.zc_word[3]);
  	    //cv_broadcast(&zil_thread_cv);
 		cv_wait(&ccf_thread_cv, &ccf_lock);	
 		mutex_exit(&ccf_lock);
@@ -398,7 +398,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s returns NULL\n", msg_data->request_id, msg_data->poolname);
   }
   else {
-	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s for blk %llu\n", msg_data->request_id, msg_data->poolname, (u_longlong_t)tail_cmt->blk_digest.zc_word[3]);
+	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s for blk %llu\n", msg_data->request_id, msg_data->poolname, (u_longlong_t)tail_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
   }
  
   /*
