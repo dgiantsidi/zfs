@@ -356,7 +356,7 @@ __attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_m
 
 	return msg_data;  
 }
-static zil_commitment_t* prev_tail_cmt = NULL;
+static zil_commitment_t prev_tail_cmt;
 
 static void netlink_test_recv_msg(struct sk_buff *skb) {
   struct sk_buff *skb_out;
@@ -379,17 +379,26 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 	printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
 	mutex_enter(&ccf_lock);
 	tail_cmt = get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
-	if (tail_cmt == prev_tail_cmt) {
+	if (tail_cmt == NULL) {
+		mutex_exit(&ccf_lock);
+		break;
+	}
+	else if (tail_cmt->blk_digest.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_digest.zc_word[ZIL_ZC_SEQ]) {
+		printk(KERN_INFO "netlink_test: same_blk_id pool: %s (request_id: %d) block_num=%llu\n", tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_digest.zc_word[3]);
+ 	    //cv_broadcast(&zil_thread_cv);
 		cv_wait(&ccf_thread_cv, &ccf_lock);	
 		mutex_exit(&ccf_lock);
 	}else {
-		prev_tail_cmt = tail_cmt;
+		prev_tail_cmt = *tail_cmt;
 		mutex_exit(&ccf_lock);
 		break;
 	}
   }
   if (tail_cmt == NULL) {
   	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s returns NULL\n", msg_data->request_id, msg_data->poolname);
+  }
+  else {
+	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s for blk %llu\n", msg_data->request_id, msg_data->poolname, (u_longlong_t)tail_cmt->blk_digest.zc_word[3]);
   }
  
   /*

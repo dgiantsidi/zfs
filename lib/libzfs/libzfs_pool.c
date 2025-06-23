@@ -1511,7 +1511,7 @@ static int count = 0;
 #endif
 #define MAX_PAYLOAD 1024 /* maximum payload size */
 #define NETLINK_TEST 17
-#define TOTAL_OPS 10 
+#define TOTAL_OPS 1000
 
 static char message[MAX_PAYLOAD];
 static int counter = 0; // static to retain value between calls
@@ -1609,9 +1609,9 @@ static void* get_commitments(void* poolname_v) {
 	//hrtime_t start_ts = gethrtime();
 	//hrtime_t end_ts = gethrtime();
 	for (;;) {
-		if (counter == TOTAL_OPS) {
-			printf("Total operations reached: %d\n", TOTAL_OPS);
-			break;
+		if (counter % TOTAL_OPS ==0) {
+			printf("Total operations reached: %d\n", counter);
+			// break;
 		}
 		if (counter % 1000000 == 0) {
 			// Get end time

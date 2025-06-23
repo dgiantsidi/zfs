@@ -292,10 +292,10 @@ __attribute__((unused)) void dump_zil_commitment2(const zil_commitment_t* cmt) {
   (u_longlong_t)DVA_GET_VDEV(&cmt->allocated_bp),  (u_longlong_t)DVA_GET_OFFSET(&cmt->allocated_bp), (u_longlong_t)DVA_GET_ASIZE(&cmt->allocated_bp));
 }
 
-__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments) {
+__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_commitments) {
   
   #if 1
-  dyn_array_commitments_t* head = ccf_zil_header_commitments;
+  dyn_array_commitments_t* head = ccf_zil_commitments;
   int count = head->count;
 
   for (int i = 0; i < count; i++) {
@@ -303,7 +303,7 @@ __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char
     // zfs_dbgmsg(" %s\t%s\n", head->cmt_data->name, zil_header_cmt->name);
     if (equal_size == 1 && memcmp(head->cmt_data->name, name, strnlen(head->cmt_data->name, ZFS_MAX_DATASET_NAME_LEN)) == 0) {
       // need to update
-      zfs_dbgmsg(" found:%s (name=%s)\n", head->cmt_data->name, name);
+      zfs_dbgmsg(" found:%s (name=%s) with blk_id=%llu\n", head->cmt_data->name, name, (u_longlong_t) head->cmt_data->blk_num.zc_word[3]);
       return head->cmt_data;
     }
     head = head->next;
