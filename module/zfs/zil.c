@@ -1786,13 +1786,13 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu\n", (u_longlong_t)(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
 	
-	mutex_exit(&ccf_lock);	
+	// mutex_exit(&ccf_lock);	
 	cv_broadcast(&ccf_thread_cv);
-	mutex_enter(&zil_thread_lock);
+	// mutex_enter(&ccf_lock);
 	zfs_dbgmsg(" I block for commitment on block id=%llu\n", (u_longlong_t)(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
-	cv_wait(&zil_thread_cv, &zil_thread_lock);
+	cv_wait(&zil_thread_cv, &ccf_lock);
 	zfs_dbgmsg(" I un-block for commitment on block id=%llu\n", (u_longlong_t)(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
-	mutex_exit(&zil_thread_lock);
+	mutex_exit(&ccf_lock);
 
 	while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)
 		zil_itx_destroy(itx);
