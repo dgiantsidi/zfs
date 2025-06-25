@@ -378,7 +378,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   for (;;) {
 	//printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
 	mutex_enter(&ccf_lock);
-	tail_cmt = zil_tail_commitment;// get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
+	tail_cmt = &zil_tail_commitment;// get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
 	if (tail_cmt == NULL) {
 		//mutex_exit(&ccf_lock);
 		cv_wait(&ccf_thread_cv, &ccf_lock);	
