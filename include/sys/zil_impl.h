@@ -31,6 +31,7 @@
 
 #include <sys/zil.h>
 #include <sys/dmu_objset.h>
+#include <sys/commitments.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -88,6 +89,7 @@ typedef enum {
     LWB_STATE_ISSUED,
     LWB_STATE_WRITE_DONE,
     LWB_STATE_FLUSH_DONE,
+    LWB_STATE_CCF_DONE,
     LWB_NUM_STATES
 } lwb_state_t;
 
@@ -143,6 +145,16 @@ typedef struct lwb {
  * "zl_issuer_lock" or "zl_lock" when already holding the "zcw_lock";
  * e.g. see the zil_commit_waiter_timeout() function.
  */
+ 
+typedef struct ccf_cond_var {
+	list_node_t	zcw_cond_var_node;	/* linkage in lwb_t:lwb_waiter list */
+
+	uint64_t zcw_block_id;
+	boolean_t zcw_block_ccf_acked; /* B_TRUE if block_id is CCF-acked*/
+	kcondvar_t	zcw_ccf_cv;		/* signalled when "ccf_done" */
+	kmutex_t	zcw_ccf_lock;	/* protects fields of this struct */
+} ccf_cond_var_t;
+
 typedef struct zil_commit_waiter {
 	kcondvar_t	zcw_cv;		/* signalled when "done" */
 	kmutex_t	zcw_lock;	/* protects fields of this struct */
@@ -150,7 +162,11 @@ typedef struct zil_commit_waiter {
 	lwb_t		*zcw_lwb;	/* back pointer to lwb when linked */
 	boolean_t	zcw_done;	/* B_TRUE when "done", else B_FALSE */
 	int		zcw_zio_error;	/* contains the zio io_error value */
+
+	ccf_cond_var_t* zcw_ccf_ptr;
+	
 } zil_commit_waiter_t;
+
 
 /*
  * Intent log transaction lists

@@ -26,7 +26,7 @@ struct zil_commitment {
 	dva_t allocated_bp;
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	zio_cksum_t blk_digest;
-	
+	list_t waiters;
 };
 
 typedef struct zil_commitment zil_commitment_t;
