@@ -147,13 +147,17 @@ typedef struct lwb {
  */
  
 typedef struct ccf_cond_var {
-	list_node_t	zcw_cond_var_node;	/* linkage in lwb_t:lwb_waiter list */
-
+	//list_node_t	zcw_cond_var_node;	/* linkage in lwb_t:lwb_waiter list */
 	uint64_t zcw_block_id;
 	boolean_t zcw_block_ccf_acked; /* B_TRUE if block_id is CCF-acked*/
 	kcondvar_t	zcw_ccf_cv;		/* signalled when "ccf_done" */
 	kmutex_t	zcw_ccf_lock;	/* protects fields of this struct */
 } ccf_cond_var_t;
+
+typedef struct ccf_waiter {
+	list_node_t	zcw_ccf_node;	/* linkage in waiter list */
+	ccf_cond_var_t* zcw_ccf_ptr; /* ccf_cond_var_t */
+} ccf_waiter_t;
 
 typedef struct zil_commit_waiter {
 	kcondvar_t	zcw_cv;		/* signalled when "done" */
@@ -163,7 +167,7 @@ typedef struct zil_commit_waiter {
 	boolean_t	zcw_done;	/* B_TRUE when "done", else B_FALSE */
 	int		zcw_zio_error;	/* contains the zio io_error value */
 
-	ccf_cond_var_t* zcw_ccf_ptr;
+	ccf_waiter_t* zcw_ccf_waiter_ptr; /* pointer to ccf_waiter_t */;
 	
 } zil_commit_waiter_t;
 

@@ -402,22 +402,22 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 			tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_num.zc_word[3]);
 	}else {
 		prev_tail_cmt = *tail_cmt;
-		ccf_cond_var_t* zcw_ccf_ptr = NULL;
+		ccf_waiter_t* zcw_ccf_waiter = NULL;
 		printk(KERN_INFO "netlink_test: about to update the pool: %s (request_id: %d) block_id=%llu\n", \
 			 tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_num.zc_word[3]);
 
-		while ((zcw_ccf_ptr = list_remove_head(&(tail_cmt->waiters))) != NULL) {
+		while ((zcw_ccf_waiter = list_remove_head(&(tail_cmt->waiters))) != NULL) {
 			printk(KERN_INFO "netlink_test: after getting the zwc handle: %s (request_id: %d) block_id=%llu zcw=%p and *zcw=%p\n", \
-				tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_num.zc_word[3], (void*)zcw_ccf_ptr,(void*)(zcw_ccf_ptr));
+				tail_cmt->name, msg_data->request_id, (u_longlong_t)tail_cmt->blk_num.zc_word[3], (void*)zcw_ccf_waiter,(void*)(zcw_ccf_waiter));
 
-			printk(KERN_INFO "netlink_test: here on blk_id=%llu\n", (zcw_ccf_ptr)->zcw_block_id);
+			printk(KERN_INFO "netlink_test: here on blk_id=%llu\n", zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id);
 
-			mutex_enter(&((zcw_ccf_ptr)->zcw_ccf_lock));
-			printk(KERN_INFO "netlink_test: wake up waiter on blk_id=%llu \n", (zcw_ccf_ptr)->zcw_block_id);;
-			zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
-			cv_broadcast(&((zcw_ccf_ptr)->zcw_ccf_cv));
-			mutex_exit(&((zcw_ccf_ptr)->zcw_ccf_lock));
-			// kmem_free(zcw_ccf_ptr, sizeof (ccf_cond_var_t));
+			mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
+			printk(KERN_INFO "netlink_test: wake up waiter on blk_id=%llu \n", zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id);;
+			zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
+			cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
+			mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
+			//kmem_free(zcw_ccf_waiter, sizeof (ccf_waiter_t));
 		}
 		mutex_exit(&ccf_lock);
 		break;

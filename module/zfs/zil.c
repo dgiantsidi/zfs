@@ -1780,7 +1780,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	 */
 	mutex_enter(&ccf_lock);
     zil_tail_commitment = *tail_commitment;
-	list_create(&(zil_tail_commitment.waiters), sizeof(ccf_cond_var_t), offsetof(ccf_cond_var_t, zcw_cond_var_node));
+	list_create(&(zil_tail_commitment.waiters), sizeof(ccf_waiter_t), offsetof(ccf_waiter_t, zcw_ccf_node));
 
 	zfs_dbgmsg(" **** tail_commitment start **** block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
 	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
@@ -1794,38 +1794,38 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 	while ((zcw = list_remove_head(&lwb->lwb_waiters)) != NULL) {
 		mutex_enter(&zcw->zcw_lock);
-		zcw->zcw_ccf_ptr->zcw_block_id = lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ];
+		zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id = lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ];
 
-		zfs_dbgmsg(" [Step 1] zcw->zcw_ccf_ptr->zcw_block_id=%llu\n", (u_longlong_t)zcw->zcw_ccf_ptr->zcw_block_id);
-		ccf_cond_var_t* zcw_copy = kmem_alloc(sizeof (ccf_cond_var_t), KM_SLEEP);
-		zcw_copy = zcw->zcw_ccf_ptr;
-		zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_block_id);
+		zfs_dbgmsg(" [Step 1] zcw->zcw_ccf_ptr->zcw_block_id=%llu\n", (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id);
+		ccf_waiter_t* zcw_copy = kmem_alloc(sizeof (ccf_waiter_t), KM_SLEEP);
+		zcw_copy = zcw->zcw_ccf_waiter_ptr;
+		zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
 
 		//memcpy(zcw_copy, zcw->zcw_ccf_ptr, sizeof(ccf_cond_var_t));
 		zfs_dbgmsg(" [Step 3: after memcpy] (*zcw_copy)->zcw_block_id=%llu\
 			zcw->zcw_ccf_ptr:%p *zcw_copy:%p zcw_copy:%p\n", \
-			(u_longlong_t)(zcw_copy)->zcw_block_id, 
-			(void*)(zcw->zcw_ccf_ptr), (void*)(zcw_copy), (void*)(zcw_copy));
+			(u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id, 
+			(void*)(zcw->zcw_ccf_waiter_ptr), (void*)(zcw_copy), (void*)(zcw_copy));
 
 		list_insert_tail(&(zil_tail_commitment.waiters), zcw_copy);
 		zfs_dbgmsg(" [Step 4: insert to list] (*zcw_copy)->zcw_block_id=%d \
 			zcw->zcw_ccf_ptr:%p *zcw_copy:%p zcw_copy:%p\n", \
-			(int)(zcw_copy)->zcw_block_id, \
-			(void*)zcw->zcw_ccf_ptr, (void*)(zcw_copy), (void*)(zcw_copy));
-		ccf_cond_var_t* head_copy = list_head(&(zil_tail_commitment.waiters));
+			(int)(zcw_copy)->zcw_ccf_ptr->zcw_block_id, \
+			(void*)zcw->zcw_ccf_waiter_ptr, (void*)(zcw_copy), (void*)(zcw_copy));
+		ccf_waiter_t* head_copy = list_head(&(zil_tail_commitment.waiters));
 		if (head_copy == NULL) {
 			zfs_dbgmsg(" [SOS: head_copy is NULL] zil_tail_commitment.waiters is empty\n");
 		}
 		else {
 			head_copy = zcw_copy;
 		}
-		ccf_cond_var_t* head_copy_ptr = ((ccf_cond_var_t*)head_copy);
+		ccf_waiter_t* head_copy_ptr = ((ccf_waiter_t*)head_copy);
 
 		zfs_dbgmsg(" [Step 5: fetch list_head] \
 			(head_copy_ptr)->zcw_block_id=%d (%d) zcw->zcw_ccf_ptr:%p *zcw_copy:%p \
 			zcw_copy=%p head_copy_ptr:%p head_copy=%p\n", \
-			(int)(head_copy_ptr)->zcw_block_id, (int)zcw->zcw_ccf_ptr->zcw_block_id, \
-			(void*)zcw->zcw_ccf_ptr, (void*)(zcw_copy), (void*)(zcw_copy), head_copy_ptr, (void*)(head_copy));
+			(int)(head_copy_ptr)->zcw_ccf_ptr->zcw_block_id, (int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
+			(void*)zcw->zcw_ccf_waiter_ptr, (void*)(zcw_copy), (void*)(zcw_copy), head_copy_ptr, (void*)(head_copy));
 		
 		#if 0
 		zfs_dbgmsg(" > zcw before copy: block id=%llu zcw=%p *zcw_copy=%p zcw_copy=%p\n", (u_longlong_t)zcw->zcw_block_id, (void*)zcw, (void*)(zcw_copy), (void*)(zcw_copy));
@@ -3833,13 +3833,19 @@ zil_alloc_commit_waiter(void)
 	cv_init(&zcw->zcw_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&zcw->zcw_lock, NULL, MUTEX_DEFAULT, NULL);
 	
-	zcw->zcw_ccf_ptr = kmem_alloc(sizeof (ccf_cond_var_t), KM_SLEEP);
-	cv_init(&(zcw->zcw_ccf_ptr->zcw_ccf_cv), NULL, CV_DEFAULT, NULL);
-	mutex_init(&(zcw->zcw_ccf_ptr->zcw_ccf_lock), NULL, MUTEX_DEFAULT, NULL);
-	zcw->zcw_ccf_ptr->zcw_block_id = 0;
-	zcw->zcw_ccf_ptr->zcw_block_ccf_acked = B_FALSE;;
+	// ccf_waiter_t initialization
+	zcw->zcw_ccf_waiter_ptr = kmem_alloc(sizeof (ccf_waiter_t), KM_SLEEP);
+	zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr = kmem_alloc(sizeof (ccf_cond_var_t), KM_SLEEP);
+	cv_init(&(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_cv), NULL, CV_DEFAULT, NULL);
+	mutex_init(&(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock), NULL, MUTEX_DEFAULT, NULL);
+	zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id = 0;
+	zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked = B_FALSE;;
+	list_link_init(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_node);
 
-	zfs_dbgmsg(" zcw->zwc_block_id=%d, zcw=%p CCF-acked %s\n", (int)zcw->zcw_ccf_ptr->zcw_block_id, (void*)zcw, (zcw->zcw_ccf_ptr->zcw_block_ccf_acked) ? "true" : "false");
+	zfs_dbgmsg(" zcw->zwc_block_id=%llu, zcw=%p CCF-acked %s\n", \
+		(u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, (void*)zcw, \
+		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
+	
 	list_link_init(&zcw->zcw_node);
 	zcw->zcw_lwb = NULL;
 	zcw->zcw_done = B_FALSE;
@@ -3852,28 +3858,35 @@ static void
 zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 {
 	zfs_dbgmsg(" [Before blocking] zcw->block_id  %llu is safe to ccf = %s",\
-	    (u_longlong_t)zcw->zcw_ccf_ptr->zcw_block_id, (zcw->zcw_ccf_ptr->zcw_block_ccf_acked ? "true" : "false"));
-	mutex_enter(&zcw->zcw_ccf_ptr->zcw_ccf_lock);
+	    (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
+		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
+	mutex_enter(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
 	zfs_dbgmsg(" [Before waiting] zcw->block_id  %llu is safe to ccf = %s",\
-	    (u_longlong_t)zcw->zcw_ccf_ptr->zcw_block_id, (zcw->zcw_ccf_ptr->zcw_block_ccf_acked ? "true" : "false"));
+	    (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
+		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
 	#if 1
-	while (zcw->zcw_ccf_ptr->zcw_block_ccf_acked == B_FALSE) {
-		cv_wait(&zcw->zcw_ccf_ptr->zcw_ccf_cv, &zcw->zcw_ccf_ptr->zcw_ccf_lock);
+	while (zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_FALSE) {
+		cv_wait(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_cv, &zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
 	}
 	#endif
-	mutex_exit(&zcw->zcw_ccf_ptr->zcw_ccf_lock);
+	mutex_exit(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
 
 	zfs_dbgmsg(" [After blocking] zcw->block_id is safe to ccf: %llu is safe to ccf = %s",\
-	    (u_longlong_t)zcw->zcw_ccf_ptr->zcw_block_id, (zcw->zcw_ccf_ptr->zcw_block_ccf_acked ? "true" : "false"));
+	    (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
+		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
 
 	ASSERT(!list_link_active(&zcw->zcw_node));
 	ASSERT3P(zcw->zcw_lwb, ==, NULL);
 	ASSERT3B(zcw->zcw_done, ==, B_TRUE);
-	ASSERT3B(zcw->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);
+	ASSERT3B(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);
 	mutex_destroy(&zcw->zcw_lock);
-	mutex_destroy(&zcw->zcw_ccf_ptr->zcw_ccf_lock);
-	cv_destroy(&zcw->zcw_ccf_ptr->zcw_ccf_cv);
-	kmem_free(zcw->zcw_ccf_ptr, sizeof (ccf_cond_var_t));
+
+	mutex_destroy(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
+	cv_destroy(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_cv);
+	kmem_free(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr, sizeof (ccf_waiter_t));
+	kmem_free(zcw->zcw_ccf_waiter_ptr, sizeof (ccf_cond_var_t));
+
+
 	cv_destroy(&zcw->zcw_cv);
 	kmem_cache_free(zil_zcw_cache, zcw);
 }
