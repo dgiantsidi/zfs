@@ -375,10 +375,11 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, sizeof(struct userspace_to_kernel_msg));
   printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
   zil_commitment_t* tail_cmt = NULL;
+  #if 0
   mutex_enter(&ccf_lock);
   cv_broadcast(&zil_thread_cv);
   mutex_exit(&ccf_lock);
-  
+  #endif
   for (;;) {
 	printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
 	mutex_enter(&ccf_lock);
@@ -416,7 +417,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 			zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
 			cv_broadcast(&((zcw_ccf_ptr)->zcw_ccf_cv));
 			mutex_exit(&((zcw_ccf_ptr)->zcw_ccf_lock));
-			kmem_free(zcw_ccf_ptr, sizeof (ccf_cond_var_t));
+			// kmem_free(zcw_ccf_ptr, sizeof (ccf_cond_var_t));
 		}
 		mutex_exit(&ccf_lock);
 		break;

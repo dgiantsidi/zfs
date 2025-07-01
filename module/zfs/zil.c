@@ -1867,8 +1867,8 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	cv_broadcast(&ccf_thread_cv);
 	mutex_exit(&ccf_lock);
 
-	zfs_dbgmsg(" I block for commitment on block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
-	#if 1
+	//zfs_dbgmsg(" I block for commitment on block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
+	#if 0
 	mutex_enter(&ccf_lock);
 	cv_wait(&zil_thread_cv, &ccf_lock);
 	zfs_dbgmsg(" I un-block for commitment on block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
