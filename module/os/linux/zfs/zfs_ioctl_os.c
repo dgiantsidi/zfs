@@ -417,7 +417,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 			zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
 			cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
 			mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
-			//kmem_free(zcw_ccf_waiter, sizeof (ccf_waiter_t));
+			kmem_free(zcw_ccf_waiter, sizeof (ccf_waiter_t));
 		}
 		mutex_exit(&ccf_lock);
 		break;

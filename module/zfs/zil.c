@@ -1798,7 +1798,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 		zfs_dbgmsg(" [Step 1] zcw->zcw_ccf_ptr->zcw_block_id=%llu\n", (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id);
 		ccf_waiter_t* zcw_copy = kmem_alloc(sizeof (ccf_waiter_t), KM_SLEEP);
-		zcw_copy = zcw->zcw_ccf_waiter_ptr;
+		zcw_copy->zcw_ccf_ptr = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr;
 		zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
 
 		//memcpy(zcw_copy, zcw->zcw_ccf_ptr, sizeof(ccf_cond_var_t));
