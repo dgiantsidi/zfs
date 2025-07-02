@@ -4214,13 +4214,14 @@ zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 
 	while ((lwb = list_head(&zilog->zl_lwb_list)) != NULL) {
 		zh->zh_log = lwb->lwb_blk;
-		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx\
+		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx (%llu)\
 			 in txg=%llu w/ (lwb->lwb_state != LWB_STATE_FLUSH_DONE) = %d, lwb->lwb_alloc_txg=%llu,\
 			  lwb->lwb_max_txg=%llu, lwb->lwb_issued_txg=%llu\n", \
 			(void*)zilog, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0], \
 			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1], \
 			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2], \
-			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], \
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], \
 			(u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE), \
 			(u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,\
 			(u_longlong_t)lwb->lwb_issued_txg);

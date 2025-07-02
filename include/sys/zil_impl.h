@@ -89,7 +89,6 @@ typedef enum {
     LWB_STATE_ISSUED,
     LWB_STATE_WRITE_DONE,
     LWB_STATE_FLUSH_DONE,
-    LWB_STATE_CCF_DONE,
     LWB_NUM_STATES
 } lwb_state_t;
 
