@@ -1768,6 +1768,8 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 	zil_commitment_t* tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg,\
 		lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
+	zil_commitment_t* tail_commitment_copy = generate_zil_tail_cmt(name, lwb->lwb_issued_txg,\
+		lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
 	// dump_zil_commitment2(tail_commitment);
 	// zil_tail_commitment = *tail_commitment;
 
@@ -1780,6 +1782,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	 */
 	mutex_enter(&ccf_lock);
     zil_tail_commitment = *tail_commitment;
+	list_create(&(tail_commitment_copy->waiters), sizeof(ccf_waiter_t), offsetof(ccf_waiter_t, zcw_ccf_node));
 	list_create(&(zil_tail_commitment.waiters), sizeof(ccf_waiter_t), offsetof(ccf_waiter_t, zcw_ccf_node));
 
 	zfs_dbgmsg(" **** tail_commitment start **** block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
@@ -1798,6 +1801,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 		zfs_dbgmsg(" [Step 1] zcw->zcw_ccf_ptr->zcw_block_id=%llu\n", (u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id);
 		ccf_waiter_t* zcw_copy = kmem_alloc(sizeof (ccf_waiter_t), KM_SLEEP);
+
 		zcw_copy->zcw_ccf_ptr = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr;
 		zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
 
@@ -1807,12 +1811,13 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 			(u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id, 
 			(void*)(zcw->zcw_ccf_waiter_ptr), (void*)(zcw_copy), (void*)(zcw_copy));
 
-		list_insert_tail(&(zil_tail_commitment.waiters), zcw_copy);
+		// list_insert_tail(&(zil_tail_commitment.waiters), zcw_copy);
+		list_insert_tail(&(tail_commitment_copy->waiters), zcw_copy);
 		zfs_dbgmsg(" [Step 4: insert to list] (*zcw_copy)->zcw_block_id=%d \
 			zcw->zcw_ccf_ptr:%p *zcw_copy:%p zcw_copy:%p\n", \
 			(int)(zcw_copy)->zcw_ccf_ptr->zcw_block_id, \
 			(void*)zcw->zcw_ccf_waiter_ptr, (void*)(zcw_copy), (void*)(zcw_copy));
-		ccf_waiter_t* head_copy = list_head(&(zil_tail_commitment.waiters));
+		ccf_waiter_t* head_copy = list_head(&(tail_commitment_copy->waiters));
 		if (head_copy == NULL) {
 			zfs_dbgmsg(" [SOS: head_copy is NULL] zil_tail_commitment.waiters is empty\n");
 		}
@@ -1821,8 +1826,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		}
 		ccf_waiter_t* head_copy_ptr = ((ccf_waiter_t*)head_copy);
 
-		zfs_dbgmsg(" [Step 5: fetch list_head] \
-			(head_copy_ptr)->zcw_block_id=%d (%d) zcw->zcw_ccf_ptr:%p *zcw_copy:%p \
+		zfs_dbgmsg(" [Step 5: fetch list_head] (head_copy_ptr)->zcw_block_id=%d (%d) zcw->zcw_ccf_ptr:%p *zcw_copy:%p \
 			zcw_copy=%p head_copy_ptr:%p head_copy=%p\n", \
 			(int)(head_copy_ptr)->zcw_ccf_ptr->zcw_block_id, (int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
 			(void*)zcw->zcw_ccf_waiter_ptr, (void*)(zcw_copy), (void*)(zcw_copy), head_copy_ptr, (void*)(head_copy));
@@ -1862,7 +1866,44 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 		mutex_exit(&zcw->zcw_lock);
 	}
-	zfs_dbgmsg(" notify ccf-thread block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
+	if (consumer_list_handle == NULL) {
+		consumer_list_handle = &pending_commitments_1;
+		list_insert_head(&pending_commitments_1, tail_commitment_copy);
+	}
+	else {
+		if (consumer_list_handle == &pending_commitments_1) {
+			if (list_is_empty(&pending_commitments_1)) {
+				if (!list_is_empty(&pending_commitments_2))
+					consumer_list_handle = &pending_commitments_2;
+				list_insert_head(&pending_commitments_1, tail_commitment_copy);
+				zfs_dbgmsg(" added block id=%llu in %p\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+	 				(void*)(&pending_commitments_1));
+			}
+			else {
+				list_insert_head(&pending_commitments_2, tail_commitment_copy);
+				zfs_dbgmsg(" added block id=%llu in %p\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+	 				(void*)(&pending_commitments_2));
+			}
+		}
+		else if (consumer_list_handle == &pending_commitments_2) {
+			if (list_is_empty(&pending_commitments_2)) {
+				if (!list_is_empty(&pending_commitments_1))
+					consumer_list_handle = &pending_commitments_1;
+				list_insert_head(&pending_commitments_2, tail_commitment_copy);
+				zfs_dbgmsg(" added block id=%llu in %p\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+	 				(void*)(&pending_commitments_2));
+			}
+			else {
+				list_insert_head(&pending_commitments_1, tail_commitment_copy);
+				zfs_dbgmsg(" added block id=%llu in %p\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+	 				(void*)(&pending_commitments_1));
+			}
+		}	
+	}
+	
+	zfs_dbgmsg(" notify ccf-thread block id=%llu which will read from %p\n", \
+		(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+	 	(void*)consumer_list_handle);
 
 	cv_broadcast(&ccf_thread_cv);
 	mutex_exit(&ccf_lock);

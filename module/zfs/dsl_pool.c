@@ -487,6 +487,10 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 		ccf_zil_tail_commitments = alloc_node(sizeof(dyn_array_commitments_t));
 		ccf_zil_tail_commitments->count = 0;
 		ccf_zil_tail_commitments->next = NULL;
+		list_create(&pending_commitments_1, sizeof(commitments_list_node_t), offsetof(commitments_list_node_t, node));
+		list_create(&pending_commitments_2, sizeof(commitments_list_node_t), offsetof(commitments_list_node_t, node));
+		consumer_list_handle = NULL;
+		
 		zfs_dbgmsg(" ccf_zil_header_commitments=%p\n", (void*)(ccf_zil_header_commitments));
 	}
 

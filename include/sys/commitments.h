@@ -31,6 +31,15 @@ struct zil_commitment {
 
 typedef struct zil_commitment zil_commitment_t;
 
+
+struct commitments_list_node {
+	list_node_t node; // for list of pending commitments
+	zil_commitment_t* cmt;
+};
+
+typedef struct commitments_list_node commitments_list_node_t;
+
+
 struct dyn_array_commitments {
 	/* 
 	 * the number of actual ZIL commitments (one per ZIL in the pool)
