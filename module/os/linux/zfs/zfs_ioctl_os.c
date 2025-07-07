@@ -397,10 +397,12 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 	if (list_is_empty(consumer_list)){
 		//cv_wait(&ccf_thread_cv, &ccf_lock);	
 		int rc = -1;
-		while (rc == -1) {
-			printk(KERN_INFO "netlink_test: consumer_list=%p for pool: %s (request_id: %d)\n", \
+		printk(KERN_INFO "netlink_test: consumer_list=%p for pool: %s (request_id: %d)\n", \
 				(void*) consumer_list, \
 				msg_data->poolname, msg_data->request_id);
+				
+		while (rc == -1) {
+			
 
 			wakeup = gethrtime() + sleep;
 			rc = cv_timedwait_hires(&ccf_thread_cv,
@@ -444,6 +446,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 				latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
 		} 
 		else {
+			int iteration = 0;
 			for (;;) {
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
 				ccf_waiter_t* zcw_ccf_waiter = NULL;
@@ -458,7 +461,8 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 
 					printk(KERN_INFO "netlink_test: here on blk_id=%llu\n", zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id);
 					mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
-					printk(KERN_INFO "netlink_test: wake up waiter on blk_id=%llu \n", zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id);;
+					printk(KERN_INFO "netlink_test: wake up waiter on blk_id=%llu  iteration=%d\n",\
+						zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id, iteration);
 					zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
 					cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
 					mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
@@ -466,6 +470,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 				}
 				//todo: free(latest_cmt);
 				latest_cmt = list_remove_head(consumer_list);
+				iteration++;
 				printk(KERN_INFO "netlink_test (reading from consumer_list=%p)\n", (void*) consumer_list);
 
 				if (latest_cmt == NULL) {
