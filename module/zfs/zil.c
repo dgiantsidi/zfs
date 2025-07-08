@@ -1815,7 +1815,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 			(void*)(zcw->zcw_ccf_waiter_ptr), (void*)(zcw_copy), (void*)(zcw_copy));
 		#endif
 		// list_insert_tail(&(zil_tail_commitment.waiters), zcw_copy);
-		list_insert_head(&(tail_commitment_copy->waiters), zcw_copy);
+		list_insert_tail(&(tail_commitment_copy->waiters), zcw_copy);
 		#if 0
 		zfs_dbgmsg(" [Step 4: insert to list] (*zcw_copy)->zcw_block_id=%d \
 			zcw->zcw_ccf_ptr:%p *zcw_copy:%p zcw_copy:%p\n", \
@@ -3937,7 +3937,7 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 	ASSERT3P(zcw->zcw_lwb, ==, NULL);
 	ASSERT3B(zcw->zcw_done, ==, B_TRUE);
 	if (zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id != -1) {
-		zfs_dbgmsg(" [After blocking] zcw->block_id is safe to ccf: %d is safe to ccf = %s",\
+		zfs_dbgmsg(" [After blocking] >>> zcw->block_id is safe to ccf: %d is safe to ccf = %s",\
 	    (int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
 		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
 		ASSERT3B(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);

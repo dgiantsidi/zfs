@@ -373,7 +373,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   msg_size = strlen(msg);
   //printk(KERN_INFO "netlink_test: Received request msg_size:%d\n", nlh->nlmsg_len);
   struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, sizeof(struct userspace_to_kernel_msg));
-  printk(KERN_INFO "netlink_test: Received from request_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
+  printk(KERN_INFO "netlink_test: Received ack-ed request_id/blk_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
   zil_commitment_t* latest_cmt = NULL;
   list_t* consumer_list = NULL;
   hrtime_t sleep = 10000; // 10000 nanoseconds = 10 microseconds
@@ -403,8 +403,6 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 				msg_data->poolname, msg_data->request_id);
 		#endif	
 		while (rc == -1) {
-			
-
 			wakeup = gethrtime() + sleep;
 			rc = cv_timedwait_hires(&ccf_thread_cv,
 					&ccf_lock, wakeup, USEC2NSEC(2),
@@ -421,7 +419,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 		break;
 	}
 	else {
-		latest_cmt = list_remove_head(consumer_list);
+		latest_cmt = list_remove_tail(consumer_list);
 		if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
 			#if 0
 			printk(KERN_INFO "netlink_test (reading from consumer_list=%p): same_blk_id pool: %s (request_id: %d) block_id=%llu\n", \
@@ -455,6 +453,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 		else {
 			int iteration = 0;
 			for (;;) {
+				
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
 				ccf_waiter_t* zcw_ccf_waiter = NULL;
 				#if 0
@@ -463,7 +462,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 					latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
 				#endif
 
-				while ((zcw_ccf_waiter = list_remove_head(&(latest_cmt->waiters))) != NULL) {
+				while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL) {
 					#if 0
 					printk(KERN_INFO "netlink_test (reading from consumer_list=%p): after getting the zwc handle: %s (request_id: %d) block_id=%llu zcw=%p and *zcw=%p\n", \
 						(void*) consumer_list, \
@@ -481,7 +480,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 					mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
 					kmem_free(zcw_ccf_waiter, sizeof (ccf_waiter_t));
 				}
-				//todo: free(latest_cmt);
+				free_node(latest_cmt, sizeof(zil_commitment_t));
 				latest_cmt = list_remove_head(consumer_list);
 				iteration++;
 				// printk(KERN_INFO "netlink_test (reading from consumer_list=%p)\n", (void*) consumer_list);
@@ -579,7 +578,7 @@ openzfs_init_os(void)
   	struct netlink_kernel_cfg cfg = {
     	.input = netlink_test_recv_msg,
   	};
-
+	prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = -1;
   	nl_sock = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg);
   	if (!nl_sock) {
     	printk(KERN_NOTICE "netlink_test: Error creating socket.\n");

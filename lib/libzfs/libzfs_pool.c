@@ -1514,7 +1514,7 @@ static int count = 0;
 #define TOTAL_OPS 1000
 
 static char message[MAX_PAYLOAD];
-static int counter = 0; // static to retain value between calls
+static int counter = -1; // static to retain value between calls
 
 static int current_msg_size = MAX_PAYLOAD;
 

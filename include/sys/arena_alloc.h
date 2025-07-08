@@ -31,10 +31,11 @@ __attribute__((unused)) static void _printf(const char *format, ...);
 // function definitions
 __attribute__((unused)) static void *alloc_node(size_t sz) {
   // return vmalloc(sz);
+  // return kmem_alloc(sz, KM_SLEEP);
   return vmem_alloc(sz, KM_SLEEP);
 }
 
-__attribute__((unused)) static void free_node(void *ptr, size_t sz) { vmem_free(ptr, sz); }
+__attribute__((unused)) static void free_node(void *ptr, size_t sz) { vmem_free(ptr, sz); } //kmem_free(ptr, sz); }
 
 __attribute__((unused)) static void _printf(const char *format, ...) {
   va_list args;
