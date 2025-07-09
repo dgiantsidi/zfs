@@ -1609,9 +1609,9 @@ static void* get_commitments(void* poolname_v) {
 	//hrtime_t start_ts = gethrtime();
 	//hrtime_t end_ts = gethrtime();
 	for (;;) {
-		if (counter % TOTAL_OPS ==0) {
+		if (counter % TOTAL_OPS == 0) {
 			printf("Total operations reached: %d\n", counter);
-			// break;
+			//break;
 		}
 		if (counter % 1000000 == 0) {
 			// Get end time
@@ -1645,7 +1645,7 @@ static void* get_commitments(void* poolname_v) {
 		my_msg = construct_notify_msg_type(poolname);
 		/* Fill in the netlink message payload */
 		// strcpy(NLMSG_DATA(nlh), my_msg);
-		memcpy(NLMSG_DATA(nlh), my_msg,sizeof(struct userspace_to_kernel_msg));  
+		memcpy(NLMSG_DATA(nlh), my_msg, sizeof(struct userspace_to_kernel_msg));  
 		// struct userspace_to_kernel_msg* structured_msg =  decode_received_msg(NLMSG_DATA(nlh), sizeof(struct userspace_to_kernel_msg));
 		//printf("%s structured_msg->poolname: %s (strlen(my_msg)=%ld)\n", __func__, structured_msg->poolname, strlen(my_msg));
 		memset(&iov, 0, sizeof(iov));
@@ -1661,7 +1661,7 @@ static void* get_commitments(void* poolname_v) {
 		msg.msg_iov = &iov;
 		msg.msg_iovlen = 1;
 
-//		printf("Send to kernel\n");
+		printf("Send to kernel\n");
 
 		rc = sendmsg(sock_fd, &msg, 0);
 		if (rc < 0) {
@@ -1679,11 +1679,18 @@ static void* get_commitments(void* poolname_v) {
 			close(sock_fd);
 			return NULL;
 		}
+		int blk_num = 0;
+		memcpy(&blk_num, NLMSG_DATA(nlh), sizeof(int));
+		/*
 		if (memcmp(NLMSG_DATA(nlh), my_msg, strlen(my_msg)) != 0) {
 			printf("Received message does not match sent message.\n");
 			return NULL;
 		}
-		counter++;
+		*/
+		printf("Received blk-id = %d %s.\n", blk_num, (char*)NLMSG_DATA(nlh));
+		
+
+		counter = blk_num;
 		free(my_msg);
 
 		//printf("Received from kernel: %s\n", NLMSG_DATA(nlh));
