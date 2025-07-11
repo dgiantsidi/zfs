@@ -1665,7 +1665,9 @@ static void* get_commitments(void* poolname_v) {
 		int blk_num = 0;
 		memcpy(&blk_num, NLMSG_DATA(nlh), sizeof(int));
 
-		printf("received from the kernel block id=%d.\n", blk_num);
+		if (print_counter % TOTAL_OPS == 0)
+			printf("total ops=%d, received from the kernel block id=%d.\n", print_counter, blk_num);
+					
 		
 		counter = blk_num;
 		print_counter++;
@@ -1694,6 +1696,9 @@ static void handle_sigint(int sig) {
 	pthread_join(thread_id, &result);
 	if (result == PTHREAD_CANCELED) {
     	printf("thread was canceled\n");
+	}
+	else {
+		printf("unsuccessful termination of the running thread\n");
 	}
 	exit(0);
 }

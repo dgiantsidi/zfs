@@ -395,7 +395,7 @@ static void recv_cmt_callback(struct sk_buff *skb) {
 					&ccf_lock, wakeup, USEC2NSEC(2),
 					CALLOUT_FLAG_ABSOLUTE);
 			if (rc == -1) {
-				if (iterations%10000 == 0) {
+				if (iterations%100000 == 0) {
 					printk(KERN_INFO "recv_cmt_callback: timeout waiting for pool: %s (request_id: %d) iteration no=%d\n", \
 						msg_data->poolname, msg_data->request_id, iterations);
 				}
@@ -433,7 +433,7 @@ static void recv_cmt_callback(struct sk_buff *skb) {
 			if (!list_is_empty(consumer_list_handle))
 				break;
 			else if (rc == -1) {
-				if (iterations%10000 == 0) {
+				if (iterations%100000 == 0) {
 					printk(KERN_INFO "recv_cmt_callback: timeout waiting for pool: %s (request_id: %d) iteration no=%d\n", \
 						msg_data->poolname, msg_data->request_id, iterations);
 				}
@@ -609,7 +609,7 @@ openzfs_init_os(void)
 #endif /* CONFIG_FS_POSIX_ACL */
 
 	zfs_init_idmap = (zidmap_t *)zfs_get_init_idmap();
-	printk(KERN_NOTICE "netlink_test: Init module\n");
+	printk(KERN_NOTICE "recv_cmt_callback: Init module\n");
   	
 	cv_init(&zil_thread_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&ccf_thread_cv, NULL, CV_DEFAULT, NULL);
@@ -625,10 +625,10 @@ openzfs_init_os(void)
 	prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = -1;
   	nl_sock = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg);
   	if (!nl_sock) {
-    	printk(KERN_NOTICE "netlink_test: Error creating socket.\n");
+    	printk(KERN_NOTICE "recv_cmt_callback: error creating socket.\n");
     	return -10;
   	}
-		printk(KERN_NOTICE "netlink_test: Init module success\n");
+		printk(KERN_NOTICE "recv_cmt_callback: Init module success\n");
 
 	return (0);
 }
