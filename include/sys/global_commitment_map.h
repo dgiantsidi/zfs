@@ -23,8 +23,8 @@ extern zil_commitment_t* final_blk_cmt;
 extern int not_initialized;
 
 extern zil_commitment_t zil_tail_commitment;
-extern list_t pending_commitments_1; // for the tail
-extern list_t pending_commitments_2; // for the tail
+extern list_t pending_commitments; // for the tail
+//extern list_t pending_commitments_2; // for the tail
 extern list_t* consumer_list_handle; // for the tail
 
 

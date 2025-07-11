@@ -359,35 +359,57 @@ __attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_m
 }
 static zil_commitment_t prev_tail_cmt; // keeps the latest ack-ed commitment
 
-static void netlink_test_recv_msg(struct sk_buff *skb) {
+static void recv_cmt_callback(struct sk_buff *skb) {
   struct sk_buff *skb_out;
   struct nlmsghdr *nlh;
-  int msg_size;
+
   char *msg;
-  int pid;
-  int res;
+  int pid, res, msg_size;
+  
 
   nlh = (struct nlmsghdr *)skb->data;
   pid = nlh->nlmsg_pid; /* pid of sending process */
   msg = (char *)nlmsg_data(nlh);
-  msg_size = strlen(msg);
+  // msg_size = strlen(msg);
   msg_size = nlh->nlmsg_len;
-  printk(KERN_INFO "netlink_test: Received request msg_size:%d %d\n", nlh->nlmsg_len, msg_size);
+  
+ // printk(KERN_INFO "netlink_test: Received request msg_size:%d %d\n", nlh->nlmsg_len, msg_size);
   struct userspace_to_kernel_msg* msg_data = decode_received_msg(msg, sizeof(struct userspace_to_kernel_msg));
-  printk(KERN_INFO "netlink_test: Received ack-ed request_id/blk_id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
+  //printk(KERN_INFO "recv_cmt_callback: received acked cmt for block id: %d, poolname: %s\n", msg_data->request_id, msg_data->poolname);
   zil_commitment_t* latest_cmt = NULL;
   list_t* consumer_list = NULL;
   hrtime_t sleep = 10000; // 10000 nanoseconds = 10 microseconds
   hrtime_t wakeup = gethrtime() + sleep;
   
   for (;;) {
-	printk(KERN_INFO "netlink_test: Waiting for tail commitment for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+	//printk(KERN_INFO "recv_cmt_callback: waiting to get tail commitment for pool: %s (last acked cmt: %d)\n", msg_data->poolname, msg_data->request_id);
 	mutex_enter(&ccf_lock);
 	//latest_cmt = &zil_tail_commitment;// get_zil_tail_cmt_for_dsl(msg_data->poolname, ccf_zil_tail_commitments);
 	if (consumer_list_handle == NULL) {
-		printk(KERN_INFO "netlink_test: consumer_list_handle is empty(NULL) for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
-		cv_wait(&ccf_thread_cv, &ccf_lock);	
-		
+		// printk(KERN_INFO "netlink_test: consumer_list_handle is empty(NULL) for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+		int rc = -1,  iterations = 10e6;
+		//cv_wait(&ccf_thread_cv, &ccf_lock);	
+		while (rc == -1) {
+			wakeup = gethrtime() + sleep;
+			rc = cv_timedwait_hires(&ccf_thread_cv,
+					&ccf_lock, wakeup, USEC2NSEC(2),
+					CALLOUT_FLAG_ABSOLUTE);
+			if (rc == -1) {
+				if (iterations%10000 == 0) {
+					printk(KERN_INFO "recv_cmt_callback: timeout waiting for pool: %s (request_id: %d) iteration no=%d\n", \
+						msg_data->poolname, msg_data->request_id, iterations);
+				}
+				consumer_list_handle = (consumer_list_handle == &pending_commitments) ? &pending_commitments : &pending_commitments;
+				if (!list_is_empty(consumer_list_handle))
+					break;
+			}
+			iterations--;
+			if (iterations <= 0) {
+				printk(KERN_INFO "recv_cmt_callback: graceful shutdown for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+				mutex_exit(&ccf_lock);
+				return;
+			}
+		}
 		mutex_exit(&ccf_lock);
 		break;
 	}
@@ -397,7 +419,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 	//if (latest_cmt == NULL)
 	if (list_is_empty(consumer_list)){
 		//cv_wait(&ccf_thread_cv, &ccf_lock);	
-		int rc = -1;
+		int rc = -1, iterations = 10e6;
 		#if 0
 		printk(KERN_INFO "netlink_test: consumer_list=%p for pool: %s (request_id: %d)\n", \
 				(void*) consumer_list, \
@@ -406,14 +428,24 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 		while (rc == -1) {
 			wakeup = gethrtime() + sleep;
 			rc = cv_timedwait_hires(&ccf_thread_cv,
-					&ccf_lock, wakeup, USEC2NSEC(2),
+					&ccf_lock, wakeup, USEC2NSEC(10),
 					CALLOUT_FLAG_ABSOLUTE);
 			if (!list_is_empty(consumer_list_handle))
 				break;
 			else if (rc == -1) {
-				consumer_list_handle = (consumer_list_handle == &pending_commitments_1) ? &pending_commitments_2 : &pending_commitments_1;
+				if (iterations%10000 == 0) {
+					printk(KERN_INFO "recv_cmt_callback: timeout waiting for pool: %s (request_id: %d) iteration no=%d\n", \
+						msg_data->poolname, msg_data->request_id, iterations);
+				}
+				consumer_list_handle = (consumer_list_handle == &pending_commitments) ? &pending_commitments : &pending_commitments;
 				if (!list_is_empty(consumer_list_handle))
 					break;
+			}
+			iterations--;
+			if (iterations <= 0) {
+				printk(KERN_INFO "recv_cmt_callback: graceful shutdown for pool: %s (request_id: %d)\n", msg_data->poolname, msg_data->request_id);
+				mutex_exit(&ccf_lock);
+				return;
 			}
 		}
 		mutex_exit(&ccf_lock);
@@ -439,7 +471,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 				if (!list_is_empty(consumer_list_handle))
 					break;
 			}
-			#if 1
+			#if 0
 			printk(KERN_INFO "netlink_test (reading from consumer_list=%p): woken up pool: %s (request_id: %d) block_id=%llu\n", \
 				(void*) consumer_list, \
 				latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
@@ -457,7 +489,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 				if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= msg_data->request_id) {
 					prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
 					ccf_waiter_t* zcw_ccf_waiter = NULL;
-					#if 1
+					#if 0
 					printk(KERN_INFO "netlink_test (reading from consumer_list=%p): about to update the pool: %s (request_id: %d) block_id=%llu\n", \
 						(void*) consumer_list, \
 						latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
@@ -489,14 +521,14 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 
 					if (latest_cmt == NULL) {
 						msg_data->request_id = prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ];
-						printk(KERN_INFO "netlink_test: >> request_id=%d\n", msg_data->request_id);
+						printk(KERN_INFO "recv_cmt_callback: acknowledged block ids up to %d\n", msg_data->request_id);
 						break;
 					}
 				}
 				else {
 					latest_cmt = list_head(consumer_list);
 					msg_data->request_id = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-					printk(KERN_INFO "netlink_test: request_id=%d\n", msg_data->request_id);
+					printk(KERN_INFO "recv_cmt_callback: latest cmt to be acknowledged is for block id=%d\n", msg_data->request_id);
 					break;
 
 				}	
@@ -506,7 +538,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 		break;
 	}
   }
-  #if 1
+  #if 0
   if (latest_cmt == NULL) {
   	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s returns NULL\n", msg_data->request_id, msg_data->poolname);
   }
@@ -517,12 +549,11 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
  
 
 
-  //zil_commitment_t* head_cmt = get_zil_head_cmt_for_dsl(msg_data->poolname, ccf_zil_head_commitments);
 
   // create reply
   skb_out = nlmsg_new(msg_size, 0);
   if (!skb_out) {
-    printk(KERN_ERR "netlink_test: Failed to allocate new skb\n");
+    printk(KERN_ERR "recv_cmt_callback: failed to allocate new skb\n");
     return;
   }
 
@@ -537,7 +568,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
   int test = 0;
   memcpy(&test, nlmsg_data(nlh), sizeof(int));
   struct userspace_to_kernel_msg* msg_data_dbg = decode_received_msg(nlmsg_data(nlh), sizeof(struct userspace_to_kernel_msg));
-  printk(KERN_INFO "netlink_test: About to send request_id: %d %d \n", test, msg_data_dbg->request_id);
+  //printk(KERN_INFO "recv_cmt_callback: about to send request_id: %d %d \n", test, msg_data_dbg->request_id);
   kfree(msg_data_dbg);
 
   //printk(KERN_INFO "netlink_test: Send %d %s\n", msg_data->request_id, (char*) nlmsg_data(nlh));
@@ -545,7 +576,7 @@ static void netlink_test_recv_msg(struct sk_buff *skb) {
 
   res = nlmsg_unicast(nl_sock, skb_out, pid);
   if (res < 0)
-    printk(KERN_INFO "netlink_test: Error while sending skb to user\n");
+    printk(KERN_INFO "recv_cmt_callback: error while sending skb to user\n");
 }
 
 static int
@@ -589,7 +620,7 @@ openzfs_init_os(void)
 
 
   	struct netlink_kernel_cfg cfg = {
-    	.input = netlink_test_recv_msg,
+    	.input = recv_cmt_callback,
   	};
 	prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = -1;
   	nl_sock = netlink_kernel_create(&init_net, NETLINK_TEST, &cfg);
@@ -673,6 +704,4 @@ MODULE_ALIAS("zzstd");
 MODULE_DESCRIPTION("ZFS");
 MODULE_AUTHOR(ZFS_META_AUTHOR);
 MODULE_LICENSE("Dual MIT/GPL"); /* lua */
-MODULE_LICENSE("Dual BSD/GPL"); /* zstd / misc */
-MODULE_LICENSE(ZFS_META_LICENSE);
-MODULE_VERSION(ZFS_META_VERSION "-" ZFS_META_RELEASE);
+MODULE_LICENSE("Dual BSD/GPL"); /* zstd */

@@ -6,8 +6,7 @@ dyn_array_commitments_t* ccf_zil_tail_commitments = NULL;
 int not_initialized = 1;
 zil_commitment_t zil_tail_commitment;
 
-list_t pending_commitments_1; // for the tail
-list_t pending_commitments_2; // for the tail
+list_t pending_commitments; // for the tail
 list_t* consumer_list_handle; // for the tail
 
 zil_commitment_t* starting_blk_cmt;

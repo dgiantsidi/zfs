@@ -1573,11 +1573,14 @@ __attribute__((unused))  static struct userspace_to_kernel_msg* destruct_msg(con
 	(void)msg; // to avoid unused parameter warning
 	return tmp_struct;
 }
+int sock_fd = 0;
 
 static void* get_commitments(void* poolname_v) {
 	const char* poolname = (const char*)poolname_v;
+	int print_counter = 0;
 //	printf("[1] %s\n", __func__);
-
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    //pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 	struct sockaddr_nl src_addr;
   	struct sockaddr_nl dest_addr;
   	struct nlmsghdr *nlh;
@@ -1585,9 +1588,7 @@ static void* get_commitments(void* poolname_v) {
   	struct iovec iov;
   	int rc;
 
-  
-
-	int sock_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_TEST);
+	sock_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_TEST);
 	if (sock_fd < 0) {
 		printf("socket: %s\n", strerror(errno));
 		return NULL;
@@ -1609,59 +1610,41 @@ static void* get_commitments(void* poolname_v) {
 	//hrtime_t start_ts = gethrtime();
 	//hrtime_t end_ts = gethrtime();
 	for (;;) {
-		if (counter % TOTAL_OPS == 0) {
-			printf("Total operations reached: %d\n", counter);
+		if (print_counter % TOTAL_OPS == 0) {
+			printf("Total operations reached %d with last received block-id=%d\n", print_counter, counter);
 			//break;
 		}
-		if (counter % 1000000 == 0) {
-			// Get end time
-			//end_ts = gethrtime();
-			// Calculate elapsed time in seconds
-			//elapsed_ns = end_ts -start_ts;
-			//double latency_us = (elapsed_ns / 1e3) / 1e6; // Convert to microseconds
-			//printf("[RUN %d] Elapsed time: %llu  nanoseconds (latency per operation = %f us), "
-			//"msg_size=%lu\n", counter,
-			//elapsed_ns, latency_us, strlen(my_msg));
-			//start_ts = gethrtime();
-		}
-//		printf("[3] %s\n", __func__);
 
 		memset(&dest_addr, 0, sizeof(dest_addr));
 		dest_addr.nl_family = AF_NETLINK;
 		dest_addr.nl_pid = 0;    /* For Linux Kernel */
 		dest_addr.nl_groups = 0; /* unicast */
-//		printf("[4] %s\n", __func__);
 
 		nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
 
-		/* Fill the netlink message header */
+		/* fill the netlink message header */
 		nlh->nlmsg_len = NLMSG_SPACE(sizeof(struct userspace_to_kernel_msg));
 		//    nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
 
 		nlh->nlmsg_pid = getpid(); /* self pid */
 		nlh->nlmsg_flags = 0;
 
-		// my_msg = get_message(poolname);
 		my_msg = construct_notify_msg_type(poolname);
-		/* Fill in the netlink message payload */
+		/* fill in the netlink message payload */
 		// strcpy(NLMSG_DATA(nlh), my_msg);
 		memcpy(NLMSG_DATA(nlh), my_msg, sizeof(struct userspace_to_kernel_msg));  
-		// struct userspace_to_kernel_msg* structured_msg =  decode_received_msg(NLMSG_DATA(nlh), sizeof(struct userspace_to_kernel_msg));
-		//printf("%s structured_msg->poolname: %s (strlen(my_msg)=%ld)\n", __func__, structured_msg->poolname, strlen(my_msg));
+		
 		memset(&iov, 0, sizeof(iov));
 		iov.iov_base = (void *)nlh;
 		iov.iov_len = nlh->nlmsg_len;
-		// printf("%s structured_msg->poolname: %s (len=%u)\n", __func__, structured_msg->poolname, nlh->nlmsg_len);
-		// free(structured_msg);
-
-
+		
 		memset(&msg, 0, sizeof(msg));
 		msg.msg_name = (void *)&dest_addr;
 		msg.msg_namelen = sizeof(dest_addr);
 		msg.msg_iov = &iov;
 		msg.msg_iovlen = 1;
 
-		printf("Send to kernel\n");
+		// printf("send to kernel\n");
 
 		rc = sendmsg(sock_fd, &msg, 0);
 		if (rc < 0) {
@@ -1670,7 +1653,7 @@ static void* get_commitments(void* poolname_v) {
 			return NULL;
 		}
 
-		/* Read message from kernel */
+		/* read message from kernel */
 		memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
 //		printf("just before recv to kernel\n");
 		rc = recvmsg(sock_fd, &msg, 0);
@@ -1681,47 +1664,60 @@ static void* get_commitments(void* poolname_v) {
 		}
 		int blk_num = 0;
 		memcpy(&blk_num, NLMSG_DATA(nlh), sizeof(int));
-		/*
-		if (memcmp(NLMSG_DATA(nlh), my_msg, strlen(my_msg)) != 0) {
-			printf("Received message does not match sent message.\n");
-			return NULL;
-		}
-		*/
-		printf("Received blk-id = %d %s.\n", blk_num, (char*)NLMSG_DATA(nlh));
+
+		printf("received from the kernel block id=%d.\n", blk_num);
 		
-
 		counter = blk_num;
+		print_counter++;
 		free(my_msg);
-
-		//printf("Received from kernel: %s\n", NLMSG_DATA(nlh));
 		free(nlh);
 	}
 
 	return NULL;
 }
 
+pthread_t thread_id;
+
+// define the signal handler function
+static void handle_sigint(int sig) {
+	void* result;
+	printf("caught signal %d (SIGINT). Cleaning up...\n", sig);
+	pthread_cancel(thread_id);
+		printf("thread detached successfully\n");
+
+	close(sock_fd);
+	if (sock_fd > 0) {	
+		sock_fd = 0;
+	}
+	printf("socket deleted successfully\n");
+	// detach the thread
+	pthread_join(thread_id, &result);
+	if (result == PTHREAD_CANCELED) {
+    	printf("thread was canceled\n");
+	}
+	exit(0);
+}
+
+
 int
 zpool_ccf(const char *pool)
 {
-
-	/*
-	 * 1) spawn a thread to execute the zfs_ioctl(.., ZFS_IOC_UIO_TO_KERNEL, ..) syscall
-	 * 2) the handler of the zfs_ioctl(.., ZFS_IOC_UIO_TO_KERNEL, ..) will return when there is a new commitment
-	*/
-	
-	pthread_t thread_id;
+ 	signal(SIGINT, handle_sigint);
 	
 	void* result;
 
 	if (pthread_create(&thread_id, NULL, get_commitments, (void*)pool) != 0) {
-		printf("Failed to create thread: %s\n", strerror(errno));
+		printf("failed to create thread: %s\n", strerror(errno));
 	}
-	else {
-		// Detach the thread
-		pthread_join(thread_id, &result);
-		printf("Failed to detach the thread\n");
-		return 1;
-	}
+	
+	// detach the thread
+	pthread_join(thread_id, &result);
+	if (result == PTHREAD_CANCELED) {
+    	printf("thread was canceled\n");
+	} 
+	// close(sock_fd);
+	printf("thread detached ..\n");
+	
 	return 0;
 }
 

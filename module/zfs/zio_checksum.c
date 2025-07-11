@@ -414,7 +414,10 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 		zfs_dbgmsg(" [COMPUTE path]\n");
 	#if 1
 		// we are on the compute path	
+		mutex_enter(&my_mutex);
 		void* previous_blk_hash = get_serialized_hash(&cksum_map, &(prev_block_cksum));
+		mutex_exit(&my_mutex);
+
 		compute_path_compute_sha256_hash_chain(previous_blk_hash, &zilc, abd, size, ctx_template, zcp);
 		release_hash(previous_blk_hash);
 
@@ -428,7 +431,10 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 			(u_longlong_t) eck.zec_cksum.zc_word[0], (u_longlong_t) eck.zec_cksum.zc_word[1], (u_longlong_t) eck.zec_cksum.zc_word[2], \
 			(u_longlong_t) eck.zec_cksum.zc_word[3], (u_longlong_t)size);
 		
+		mutex_enter(&my_mutex);
 		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), BP_GET_LOGICAL_BIRTH(&zilc.zc_next_blk));
+		mutex_exit(&my_mutex);
+
 		// print(&cksum_map);
 	#else 
 		compute_path_compute_sha256_self_checksumming(&zilc, abd, size, ctx_template, zcp);

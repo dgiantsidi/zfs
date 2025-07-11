@@ -5,4 +5,5 @@
 
 extern C_map_t cksum_map;
 extern C_map_t recovery_map;
+extern kmutex_t my_mutex;
 
