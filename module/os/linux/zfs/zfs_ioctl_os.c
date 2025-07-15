@@ -298,7 +298,7 @@ zfsdev_attach(void)
 		 * collision with a reserved minor in linux/miscdevice.h.
 		 * In this case the kernel modules must be manually loaded.
 		 */
-		printk(KERN_INFO "ZFS: misc_register() with static minor %d "
+		printk(KERN_INFO "Shielded ZFS w/ acks: misc_register() with static minor %d "
 		    "failed %d, retrying with MISC_DYNAMIC_MINOR\n",
 		    ZFS_DEVICE_MINOR, error);
 
@@ -307,7 +307,7 @@ zfsdev_attach(void)
 	}
 
 	if (error)
-		printk(KERN_INFO "ZFS: misc_register() failed %d\n", error);
+		printk(KERN_INFO "Shielded ZFS w/ acks: misc_register() failed %d\n", error);
 
 	return (error);
 }
@@ -585,7 +585,7 @@ openzfs_init_os(void)
 	int error;
 
 	if ((error = zfs_kmod_init()) != 0) {
-		printk(KERN_NOTICE "ZFS: Failed to Load ZFS Filesystem v%s-%s%s"
+		printk(KERN_NOTICE "Shielded ZFS w/ acks: Failed to Load ZFS Filesystem v%s-%s%s"
 		    ", rc = %d\n", ZFS_META_VERSION, ZFS_META_RELEASE,
 		    ZFS_DEBUG_STR, error);
 
@@ -594,18 +594,18 @@ openzfs_init_os(void)
 
 	zfs_sysfs_init();
 
-	printk(KERN_NOTICE "ZFS: Loaded module v%s-%s%s, "
+	printk(KERN_NOTICE "Shielded ZFS w/ acked commitments: Loaded module v%s-%s%s, "
 	    "ZFS pool version %s, ZFS filesystem version %s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
 	    SPA_VERSION_STRING, ZPL_VERSION_STRING);
 #ifdef HAVE_LINUX_EXPERIMENTAL
-	printk(KERN_NOTICE "ZFS: Using ZFS with kernel %s is EXPERIMENTAL and "
+	printk(KERN_NOTICE "Shielded ZFS w/ acks: Using ZFS with kernel %s is EXPERIMENTAL and "
 	    "SERIOUS DATA LOSS may occur!\n", utsname()->release);
-	printk(KERN_NOTICE "ZFS: Please report your results at: "
+	printk(KERN_NOTICE "Shielded ZFS w/ acks: Please report your results at: "
 	    "https://github.com/openzfs/zfs/issues/new\n");
 #endif
 #ifndef CONFIG_FS_POSIX_ACL
-	printk(KERN_NOTICE "ZFS: Posix ACLs disabled by kernel\n");
+	printk(KERN_NOTICE "Shielded ZFS w/ acks: Posix ACLs disabled by kernel\n");
 #endif /* CONFIG_FS_POSIX_ACL */
 
 	zfs_init_idmap = (zidmap_t *)zfs_get_init_idmap();
@@ -644,7 +644,7 @@ openzfs_fini_os(void)
 	mutex_destroy(&ccf_lock);
 	mutex_destroy(&zil_thread_lock);
 	mutex_destroy(&ccf_thread_lock);
-	printk(KERN_NOTICE "ZFS: Unloaded module v%s-%s%s\n",
+	printk(KERN_NOTICE "Shielded ZFS w/ acks: Unloaded module v%s-%s%s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR);
 }
 

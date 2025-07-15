@@ -27,4 +27,11 @@ AC_DEFUN([ZFS_AC_CONFIG_ALWAYS_SYSTEM], [
 
 	AM_CONDITIONAL([BUILD_LINUX], [test "x$ac_system" = "xLinux"])
 	AM_CONDITIONAL([BUILD_FREEBSD], [test "x$ac_system" = "xFreeBSD"])
+	
+	AC_MSG_CHECKING([for CCF_MOCKED_DELAY_SH])
+	if test "x$CCF_MOCKED_DELAY_SH" != "x"; then
+	  AC_DEFINE([CCF_MOCKED_DELAY], [1],
+				[True if ZFS is to be compiled for a CCF Linux system])
+	fi
+
 ])

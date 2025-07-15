@@ -1517,7 +1517,7 @@ static char message[MAX_PAYLOAD];
 static int counter = -1; // static to retain value between calls
 
 static int current_msg_size = MAX_PAYLOAD;
-
+int ccf_mocked_delay_us = 500; // default delay in us (0.5ms)
 
 __attribute__((unused)) static char *get_message(const char* poolname) {
   char tmp_message[MAX_PAYLOAD];
@@ -1673,6 +1673,10 @@ static void* get_commitments(void* poolname_v) {
 		print_counter++;
 		free(my_msg);
 		free(nlh);
+#ifdef CCF_MOCKED_DELAY
+#warning "CCF_MOCKED_DELAY is defined, so the thread will sleep for 1 ms after each sendmsg()"
+		usleep(1*ccf_mocked_delay_us);
+#endif 
 	}
 
 	return NULL;
@@ -1710,6 +1714,11 @@ zpool_ccf(const char *pool)
  	signal(SIGINT, handle_sigint);
 	
 	void* result;
+	#ifdef CCF_MOCKED_DELAY
+		printf("we mock CCF delay (%d us)\n", ccf_mocked_delay_us);
+	#else
+		printf("we do not mock CCF delay --- we only incur delay due to netlink sockets\n");
+	#endif 
 
 	if (pthread_create(&thread_id, NULL, get_commitments, (void*)pool) != 0) {
 		printf("failed to create thread: %s\n", strerror(errno));
