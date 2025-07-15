@@ -257,7 +257,7 @@ zfsdev_attach(void)
 		 * collision with a reserved minor in linux/miscdevice.h.
 		 * In this case the kernel modules must be manually loaded.
 		 */
-		printk(KERN_INFO "ZFS: misc_register() with static minor %d "
+		printk(KERN_INFO "Shielded ZFS: misc_register() with static minor %d "
 		    "failed %d, retrying with MISC_DYNAMIC_MINOR\n",
 		    ZFS_DEVICE_MINOR, error);
 
@@ -266,7 +266,7 @@ zfsdev_attach(void)
 	}
 
 	if (error)
-		printk(KERN_INFO "ZFS: misc_register() failed %d\n", error);
+		printk(KERN_INFO "Shielded ZFS: misc_register() failed %d\n", error);
 
 	return (error);
 }
@@ -291,7 +291,7 @@ openzfs_init_os(void)
 	int error;
 
 	if ((error = zfs_kmod_init()) != 0) {
-		printk(KERN_NOTICE "ZFS: Failed to Load ZFS Filesystem v%s-%s%s"
+		printk(KERN_NOTICE "Shielded ZFS: Failed to Load ZFS Filesystem v%s-%s%s"
 		    ", rc = %d\n", ZFS_META_VERSION, ZFS_META_RELEASE,
 		    ZFS_DEBUG_STR, error);
 
@@ -300,18 +300,18 @@ openzfs_init_os(void)
 
 	zfs_sysfs_init();
 
-	printk(KERN_NOTICE "ZFS: Loaded module v%s-%s%s, "
+	printk(KERN_NOTICE "Shielded ZFS: Loaded module v%s-%s%s, "
 	    "ZFS pool version %s, ZFS filesystem version %s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
 	    SPA_VERSION_STRING, ZPL_VERSION_STRING);
 #ifdef HAVE_LINUX_EXPERIMENTAL
-	printk(KERN_NOTICE "ZFS: Using ZFS with kernel %s is EXPERIMENTAL and "
+	printk(KERN_NOTICE "Shielded ZFS: Using ZFS with kernel %s is EXPERIMENTAL and "
 	    "SERIOUS DATA LOSS may occur!\n", utsname()->release);
-	printk(KERN_NOTICE "ZFS: Please report your results at: "
+	printk(KERN_NOTICE "Shielded ZFS: Please report your results at: "
 	    "https://github.com/openzfs/zfs/issues/new\n");
 #endif
 #ifndef CONFIG_FS_POSIX_ACL
-	printk(KERN_NOTICE "ZFS: Posix ACLs disabled by kernel\n");
+	printk(KERN_NOTICE "Shielded ZFS: Posix ACLs disabled by kernel\n");
 #endif /* CONFIG_FS_POSIX_ACL */
 
 	zfs_init_idmap = (zidmap_t *)zfs_get_init_idmap();
@@ -325,7 +325,7 @@ openzfs_fini_os(void)
 	zfs_sysfs_fini();
 	zfs_kmod_fini();
 
-	printk(KERN_NOTICE "ZFS: Unloaded module v%s-%s%s\n",
+	printk(KERN_NOTICE "Shielded ZFS: Unloaded module v%s-%s%s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR);
 }
 
@@ -378,7 +378,7 @@ MODULE_ALIAS("znvpair");
 MODULE_ALIAS("zunicode");
 MODULE_ALIAS("zcommon");
 MODULE_ALIAS("zzstd");
-MODULE_DESCRIPTION("ZFS");
+MODULE_DESCRIPTION("Shielded zfs");
 MODULE_AUTHOR(ZFS_META_AUTHOR);
 MODULE_LICENSE("Dual MIT/GPL"); /* lua */
 MODULE_LICENSE("Dual BSD/GPL"); /* zstd / misc */
