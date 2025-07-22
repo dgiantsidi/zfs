@@ -26,6 +26,7 @@
 !scripts
 !tests
 !udev
+!ccf
 
 !.github/**
 !cmd/**
