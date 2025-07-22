@@ -41,6 +41,8 @@
 !scripts/**
 !tests/**
 !udev/**
+!ccf/**
+
 
 !.editorconfig
 !.cirrus.yml
