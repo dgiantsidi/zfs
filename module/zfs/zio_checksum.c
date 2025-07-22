@@ -346,6 +346,11 @@ static void
 abd_fletcher_2_native(abd_t *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	zil_chain_t zilc;
+	abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
+	zfs_dbgmsg(" blk_seqno=%llu\tsize=%llu\n", \
+		(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], \
+		(u_longlong_t) size);
 	(void) ctx_template;
 	fletcher_init(zcp);
 	(void) abd_iterate_func(abd, 0, size,
@@ -769,11 +774,14 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		if (checksum == ZIO_CHECKSUM_ZILOG2) {
 			zil_chain_t zilc;
 			abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
-
+			
 			zfs_dbgmsg(" zilc.zc_eck=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[0], \
 				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[1], (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[2], \
 				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[3]);
 			print_blk(zio->io_bp);
+			zfs_dbgmsg(" zilc.zc_next_blk=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], \
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1], (u_longlong_t)(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[2], \
+				(u_longlong_t)(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[3]);
 			
 			uint64_t nused = P2ROUNDUP_TYPED(zilc.zc_nused,
 			    ZIL_MIN_BLKSZ, uint64_t);
@@ -783,6 +791,7 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 			eck_offset = offsetof(zil_chain_t, zc_eck);
 		} else {
 			ASSERT3U(size, >=, sizeof (zio_eck_t));
+			ASSERT(B_FALSE);
 			eck_offset = size - sizeof (zio_eck_t);
 			abd_copy_to_buf_off(&eck, abd, eck_offset,
 			    sizeof (zio_eck_t));
