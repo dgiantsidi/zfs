@@ -392,12 +392,13 @@ static void notify_cmts_callback(struct sk_buff *skb) {
 
   uint64_t acknowledged_blk_id = 0;
   memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
+  #if 0
   printk(KERN_INFO "notify_cmts (current pid=%d): received notification from pid=%d\
 	about blk_id=%lld \
 	(payload size=%d)\n", \
 	current->pid, pid, acknowledged_blk_id, \
 	msg_size);
-
+  #endif
   mutex_enter(&ccf_lock);
   int waiters_no = 0;
   for (;;) {
@@ -449,22 +450,24 @@ static void get_cmts_callback(struct sk_buff *skb) {
   int pid = nlh->nlmsg_pid; /* pid of sending process */
   char* msg = (char *)nlmsg_data(nlh);
   int msg_size = nlh->nlmsg_len;
-  printk(KERN_INFO "get_cmts_callback: 1\n");
+  // printk(KERN_INFO "get_cmts_callback: 1\n");
   char* to_be_copied = NULL;
 
  
   get_cmt_msg_t* get_cmt = decode_get_cmt_msg(msg, sizeof(get_cmt_msg_t));
   zil_commitment_t* latest_cmt = NULL;
+  #if 0
   printk(KERN_INFO "get_cmts_callback: 2 w/ msg_size=%d from pid=%d, current pid=%d\n",\
 	msg_size, pid, current->pid);
+  #endif
   hrtime_t sleep = 10000; // 10000 nanoseconds = 10 microseconds
   hrtime_t wakeup = gethrtime() + sleep;
   
   for (;;) {
 	mutex_enter(&ccf_lock);
-	printk(KERN_INFO "get_cmts_callback: 3\n");
+	// printk(KERN_INFO "get_cmts_callback: 3\n");
 	if (consumer_list_handle == NULL || list_is_empty(consumer_list_handle)) {
-		printk(KERN_INFO "get_cmts_callback: consumer_list_handle == NULL || list_is_empty(consumer_list_handle)\n");
+		// printk(KERN_INFO "get_cmts_callback: consumer_list_handle == NULL || list_is_empty(consumer_list_handle)\n");
 
 		int rc = -1,  iterations = 5e6;
 		while (rc == -1) {
@@ -489,7 +492,7 @@ static void get_cmts_callback(struct sk_buff *skb) {
 			}
 		}
 	}
-	printk(KERN_INFO "get_cmts_callback: after 3\n");
+	// printk(KERN_INFO "get_cmts_callback: after 3\n");
 
 	if (!list_is_empty(consumer_list_handle)) {
 		latest_cmt = list_head(consumer_list_handle);
@@ -503,7 +506,7 @@ static void get_cmts_callback(struct sk_buff *skb) {
 		}
 		else {
 			while (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
-				printk(KERN_INFO "get_cmts_callback: latest_cmt equals prev_tail_cmt ..\n");
+				// printk(KERN_INFO "get_cmts_callback: latest_cmt equals prev_tail_cmt ..\n");
 				int rc = -1, iterations = 5e6;
 				while (rc == -1) {
 					wakeup = gethrtime() + sleep;
@@ -512,7 +515,7 @@ static void get_cmts_callback(struct sk_buff *skb) {
 						CALLOUT_FLAG_ABSOLUTE);
 					if (rc == -1) {
 						if (iterations % 100000 == 0) {
-							printk(KERN_INFO "get_cmts_callback: timeout waiting for pool %s, iteration no=%d\n", \
+							printk(KERN_INFO "get_cmts_callback: timeout.. waiting for pool %s, iteration no=%d\n", \
 								get_cmt->poolname, iterations);
 						}
 					}
@@ -524,34 +527,38 @@ static void get_cmts_callback(struct sk_buff *skb) {
 					}
 					latest_cmt = list_head(consumer_list_handle);
 					if (latest_cmt != NULL) {
+						#if 0
 						printk(KERN_INFO "get_cmts_callback: timeout: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 							(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+						#endif
 						if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
 							break;
 					}
 				}
 				break;		
 			}
-			printk(KERN_INFO "get_cmts_callback: 4\n");
+			// printk(KERN_INFO "get_cmts_callback: 4\n");
 			latest_cmt = list_head(consumer_list_handle);
 			to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
 				latest_cmt->blk_digest);
 			prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-			printk(KERN_INFO "get_cmts_callback: 5\n");	
+			// printk(KERN_INFO "get_cmts_callback: 5\n");	
 			mutex_exit(&ccf_lock);
 		}
 		
 		break;
 	}
   }
+  #if 0
   printk(KERN_INFO "get_cmts_callback: 6\n");
   printk(KERN_INFO "get_cmts_callback: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 	(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+  #endif
 
 
   // create reply
   
-  printk(KERN_INFO "Allocating skb with size: %d\n", msg_size);
+  // printk(KERN_INFO "Allocating skb with size: %d\n", msg_size);
 	
   if (in_atomic()) {
     printk(KERN_WARNING "Called in atomic context\n");
@@ -562,23 +569,23 @@ static void get_cmts_callback(struct sk_buff *skb) {
     printk(KERN_ERR "get_cmts_callback: failed to allocate new skb size=%dB\n", msg_size);
     return;
   }
-  printk(KERN_INFO "get_cmts_callback: 7\n");
+  // printk(KERN_INFO "get_cmts_callback: 7\n");
   // put received message into reply
   nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
   NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
   
-  printk(KERN_INFO "get_cmts_callback: 8\n");
+  // printk(KERN_INFO "get_cmts_callback: 8\n");
   
   
   memcpy(nlmsg_data(nlh), to_be_copied, get_size_of_recv_cmt());
   kfree(to_be_copied);
   kfree(get_cmt);
-  printk(KERN_INFO "get_cmts_callback: 9\n");
+  // printk(KERN_INFO "get_cmts_callback: 9\n");
 
   int res = nlmsg_unicast(nl_sock_get_cmts, skb_out, pid);
   if (res < 0)
     printk(KERN_INFO "get_cmts_callback: error while sending skb to pid=%d\n", pid);
-  printk(KERN_INFO "get_cmts_callback: 10\n");
+  // printk(KERN_INFO "get_cmts_callback: 10\n");
 }
 
 #if 0 // this is the old callback function, which is not used anymore
