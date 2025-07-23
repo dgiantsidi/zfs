@@ -1,5 +1,7 @@
 #pragma once
-#include "config.h"
+#include <cstdint>
+//#include "config.h"
+#include "sys/config_netlink.h"
 #include <errno.h>
 #include <linux/netlink.h>
 #include <stdio.h>

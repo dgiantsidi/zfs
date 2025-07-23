@@ -8,10 +8,10 @@ enum request_type {
 	REQUEST_TYPE_NOTIFY_ZIL
 };
 
-struct userspace_to_kernel_msg {
-	int request_id; // Unique ID for the request
+typedef struct userspace_to_kernel_msg {
+	int request_id; // unique ID for the request
 	int req_type;
 	char poolname[ZFS_MAX_DATASET_NAME_LEN];
 	char digest[ZIL_COMMITMENT_SIZE]; // to be calculated on the serialized zil_header data
 	zio_cksum_t blk_num;
-};
+} userspace_to_kernel_msg_t;

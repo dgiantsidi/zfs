@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_c.h"
 
 [[maybe_unused]] static char *
 serialize_notify_cmt_msg(const notify_cmt_msg_t *msg) {

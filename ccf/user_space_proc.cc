@@ -92,9 +92,8 @@ static void *notify_cmts(void *arg_poolname) {
 
     uint64_t blk_id = 0;
     memcpy(&blk_id, tx_msg, sizeof(uint64_t));
-#ifdef PRINT
     printf("%s send to kernel: {%ld, %dB}\n", __func__, blk_id, nlh->nlmsg_len);
-#endif
+
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
       printf("error seding the message: %s\n", strerror(errno));
@@ -106,9 +105,9 @@ static void *notify_cmts(void *arg_poolname) {
     free(tx_msg);
     last_acked_blk_id = last_blk_id;
     std::vector<recv_cmt_msg_t *> to_be_deleted =
-        recv_queue.pop_until_blk_id(last_blk_id);
-    // printf("delete about %d entries from the queue with last_blk_id=%ld\n",
-    // to_be_deleted.size(), last_blk_id);
+        recv_queue.pop_until_blk_id(last_acked_blk_id);
+    printf("delete about %d entries from the queue with last_blk_id=%ld\n",\
+      to_be_deleted.size(), last_acked_blk_id);
     for (auto &buf : to_be_deleted) {
       free(buf); // free the messages that were popped from the queue
     }
@@ -194,10 +193,9 @@ static void *get_cmts(void *arg_poolname) {
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
 
-#ifdef PRINT
-    printf("%s send to kernel: {%s, %dB}\n", __func__, poolname,
-           nlh->nlmsg_len);
-#endif
+    printf("%s send to kernel: {%s, %dB, pid=%d}\n", __func__, poolname,
+           nlh->nlmsg_len, nlh->nlmsg_pid);
+
     free(tx_msg);
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
@@ -218,15 +216,10 @@ static void *get_cmts(void *arg_poolname) {
 
     recv_cmt_msg_t *recv_msg =
         deserialize_recv_cmt(reinterpret_cast<char *>(NLMSG_DATA(nlh)));
-    if (expected_blk_id != recv_msg->blk_id) {
-      printf("received unexpected blk_id=%ld, expected=%ld\n", recv_msg->blk_id,
-             expected_blk_id);
-      exit(0);
-    }
-#ifdef PRINT
+    
     printf("received from kernel: {blk_id=%ld, %s, cmt=%s}\n", recv_msg->blk_id,
            recv_msg->poolname, recv_msg->tail_commitment);
-#endif
+
 
     recv_queue.push(recv_msg); // push the received message to the queue
 
