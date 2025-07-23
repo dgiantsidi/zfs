@@ -3856,7 +3856,7 @@ zil_alloc_commit_waiter(void)
 	zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked = B_FALSE;;
 	list_link_init(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_node);
 #if 0
-	zfs_dbgmsg(" zcw->zwc_block_id=%llu, zcw=%p CCF-acked %s\n", \
+	zfs_dbgmsg(" [Initialization] zcw->zwc_block_id=%llu, zcw=%p CCF-acked %s\n", \
 		(u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, (void*)zcw, \
 		(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
 #endif	

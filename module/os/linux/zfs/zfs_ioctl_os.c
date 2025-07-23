@@ -421,6 +421,10 @@ static void notify_cmts_callback(struct sk_buff *skb) {
 		list_remove_tail(consumer_list_handle);
 		free_node(latest_cmt, sizeof(zil_commitment_t));
 	}
+	else {
+		// nothing to process so far
+		break;
+	}
   }
   mutex_exit(&ccf_lock);
 }
