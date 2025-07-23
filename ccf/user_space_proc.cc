@@ -106,8 +106,8 @@ static void *notify_cmts(void *arg_poolname) {
     last_acked_blk_id = last_blk_id;
     std::vector<recv_cmt_msg_t *> to_be_deleted =
         recv_queue.pop_until_blk_id(last_acked_blk_id);
-    printf("delete about %d entries from the queue with last_blk_id=%ld\n",\
-      to_be_deleted.size(), last_acked_blk_id);
+    printf("delete about %ld entries from the queue with last_blk_id=%ld\n",
+           to_be_deleted.size(), last_acked_blk_id);
     for (auto &buf : to_be_deleted) {
       free(buf); // free the messages that were popped from the queue
     }
@@ -216,10 +216,9 @@ static void *get_cmts(void *arg_poolname) {
 
     recv_cmt_msg_t *recv_msg =
         deserialize_recv_cmt(reinterpret_cast<char *>(NLMSG_DATA(nlh)));
-    
+
     printf("received from kernel: {blk_id=%ld, %s, cmt=%s}\n", recv_msg->blk_id,
            recv_msg->poolname, recv_msg->tail_commitment);
-
 
     recv_queue.push(recv_msg); // push the received message to the queue
 
