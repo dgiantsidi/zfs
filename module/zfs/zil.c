@@ -649,7 +649,7 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	uint64_t lr_count = 0;
 	blkptr_t blk, next_blk = {{{{0}}}};
 	int error = 0;
-
+	boolean_t tail_verified = B_FALSE;
 
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	dsl_dataset_name(zilog->zl_os->os_dsl_dataset, name);
@@ -691,6 +691,13 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			(u_longlong_t)final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 	}
 	
+	if (BP_IS_HOLE(&zh->zh_log)) {
+		zfs_dbgmsg(" zil_parse: zilog=%p is a hole, nothing to parse\n", (void*)zilog);
+	} else {
+		zfs_dbgmsg(" zil_parse: starting blk %llu, claim_blk_seq %llu, claim_lr_seq %llu\n",
+		    (u_longlong_t)zh->zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ],
+		    (u_longlong_t)claim_blk_seq, (u_longlong_t)claim_lr_seq);
+	}
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
 		uint64_t blk_seq = blk.blk_cksum.zc_word[ZIL_ZC_SEQ];
@@ -717,7 +724,7 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 				// @dimitra todo: compare commitments at the calculation (zio_compute.c)
 				if (starting_blk_cmt != NULL) {
 					if (memcmp(blk.blk_cksum.zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
-						zfs_dbgmsg(" zil headers match\n");
+						zfs_dbgmsg(" zil headers match, correct.\n");
 					}
 					else {
 						zfs_dbgmsg(" error, zil headers *not* match ..\n\
@@ -736,26 +743,40 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 		}
 
 		error = parse_blk_func(zilog, &blk, arg, txg);
-		if (error != 0)
+		if (error != 0) {
+			zfs_dbgmsg(" read blk=%llu with error = %d, abort!\n",
+						(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ], error);
 			break;
+		}
 		ASSERT3U(max_blk_seq, <, blk_seq);
 		max_blk_seq = blk_seq;
 		blk_count++;
 
-		if (max_lr_seq == claim_lr_seq && max_blk_seq == claim_blk_seq)
+		if (max_lr_seq == claim_lr_seq && max_blk_seq == claim_blk_seq) {
+			zfs_dbgmsg(" zil_parse: max_lr_seq %llu == claim_lr_seq %llu && "
+						"max_blk_seq %llu == claim_blk_seq %llu, break\n",
+						(u_longlong_t)max_lr_seq, (u_longlong_t)claim_lr_seq,
+						(u_longlong_t)max_blk_seq, (u_longlong_t)claim_blk_seq);
 			break;
+		}
 
 		error = zil_read_log_block(zilog, decrypt, &blk, &next_blk,
 		    &lrp, &end, &abuf);
 		
-			if (remount) {
+		if (remount) {
 			if (final_blk_cmt != NULL) {
 				if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
 					zfs_dbgmsg(" this is the tail, error should be 0 (error=%d) ..\n", error);
+					tail_verified = (error == 0) ? B_TRUE : B_FALSE;
+					if (!tail_verified) {
+						zfs_dbgmsg(" hash chain is compromized and tail is not verified, "
+								"abort!\n");
+					}
 				}
 				else if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)-sizeof(blk.blk_cksum.zc_word[ZIL_ZC_SEQ])) == 0) {
 					if (blk.blk_cksum.zc_word[ZIL_ZC_SEQ] > final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ]) {
 						zfs_dbgmsg(" this block is past tail error should be > 0 (error=%d) ..\n", error);
+						tail_verified = (error > 0) ? B_TRUE : B_FALSE;
 						if (error <= 0) {
 							zfs_dbgmsg(" [Error] System should abort!\n");
 						}
@@ -823,7 +844,12 @@ done:
 	zilog->zl_parse_lr_seq = max_lr_seq;
 	zilog->zl_parse_blk_count = blk_count;
 	zilog->zl_parse_lr_count = lr_count;
-
+	// todo: check that the tail commitment is the last block
+	if (remount && !tail_verified)
+		zfs_dbgmsg(" hash chain is compromized, abort!\n");
+	else if (remount && tail_verified) {
+		zfs_dbgmsg(" hash chain is verified, tail is correct!\n");
+	}
 	zil_bp_tree_fini(zilog);
 	starting_blk_cmt = NULL;
 	final_blk_cmt = NULL;
