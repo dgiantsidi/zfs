@@ -86,24 +86,22 @@ zfs_vfs_held(zfsvfs_t *zfsvfs)
 	return (zfsvfs->z_sb != NULL);
 }
 
-int
-zfs_vfs_ref(zfsvfs_t **zfvp)
+int zfs_vfs_ref(zfsvfs_t **zfvp)
 {
 	if (*zfvp == NULL || (*zfvp)->z_sb == NULL ||
-	    !atomic_inc_not_zero(&((*zfvp)->z_sb->s_active))) {
+		!atomic_inc_not_zero(&((*zfvp)->z_sb->s_active)))
+	{
 		return (SET_ERROR(ESRCH));
 	}
 	return (0);
 }
 
-void
-zfs_vfs_rele(zfsvfs_t *zfsvfs)
+void zfs_vfs_rele(zfsvfs_t *zfsvfs)
 {
 	deactivate_super(zfsvfs->z_sb);
 }
 
-void
-zfsdev_private_set_state(void *priv, zfsdev_state_t *zs)
+void zfsdev_private_set_state(void *priv, zfsdev_state_t *zs)
 {
 	struct file *filp = priv;
 
@@ -141,9 +139,10 @@ zfsdev_release(struct inode *ino, struct file *filp)
 	return (0);
 }
 
-static int zfsdev_map(struct file *filp, struct vm_area_struct *vma) {
+static int zfsdev_map(struct file *filp, struct vm_area_struct *vma)
+{
 	zfs_dbgmsg("\n");
-	#if 0
+#if 0
 	int error;
 	zfsdev_state_t *zs;
 
@@ -155,15 +154,15 @@ static int zfsdev_map(struct file *filp, struct vm_area_struct *vma) {
 	if (zs == NULL) {
 		return (-SET_ERROR(ENODEV));
 	}
-	#endif
+#endif
 
-	#if 0
+#if 0
 	error = zfs_map(zs, vma->vm_start, vma->vm_end - vma->vm_start,
 	    vma->vm_flags);
 	if (error != 0) {
 		return (-error);
 	}
-	#endif
+#endif
 
 	return (0);
 }
@@ -178,20 +177,20 @@ zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 
-	zc = vmem_zalloc(sizeof (zfs_cmd_t), KM_SLEEP);
+	zc = vmem_zalloc(sizeof(zfs_cmd_t), KM_SLEEP);
 
-	if (ddi_copyin((void *)(uintptr_t)arg, zc, sizeof (zfs_cmd_t), 0)) {
+	if (ddi_copyin((void *)(uintptr_t)arg, zc, sizeof(zfs_cmd_t), 0))
+	{
 		error = -SET_ERROR(EFAULT);
 		goto out;
 	}
 	error = -zfsdev_ioctl_common(vecnum, zc, 0);
-	rc = ddi_copyout(zc, (void *)(uintptr_t)arg, sizeof (zfs_cmd_t), 0);
+	rc = ddi_copyout(zc, (void *)(uintptr_t)arg, sizeof(zfs_cmd_t), 0);
 	if (error == 0 && rc != 0)
 		error = -SET_ERROR(EFAULT);
 out:
-	vmem_free(zc, sizeof (zfs_cmd_t));
+	vmem_free(zc, sizeof(zfs_cmd_t));
 	return (error);
-
 }
 
 static int
@@ -246,18 +245,16 @@ zfs_max_nvlist_src_size_os(void)
 }
 
 /* Update the VFS's cache of mountpoint properties */
-void
-zfs_ioctl_update_mount_cache(const char *dsname)
+void zfs_ioctl_update_mount_cache(const char *dsname)
 {
 }
 
-void
-zfs_ioctl_init_os(void)
+void zfs_ioctl_init_os(void)
 {
 	zfs_ioctl_register_dataset_nolog(ZFS_IOC_USERNS_ATTACH,
-	    zfs_ioc_userns_attach, zfs_secpolicy_config, POOL_CHECK_NONE);
+									 zfs_ioc_userns_attach, zfs_secpolicy_config, POOL_CHECK_NONE);
 	zfs_ioctl_register_dataset_nolog(ZFS_IOC_USERNS_DETACH,
-	    zfs_ioc_userns_detach, zfs_secpolicy_config, POOL_CHECK_NONE);
+									 zfs_ioc_userns_detach, zfs_secpolicy_config, POOL_CHECK_NONE);
 }
 
 #ifdef CONFIG_COMPAT
@@ -267,42 +264,42 @@ zfsdev_compat_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 	return (zfsdev_ioctl(filp, cmd, arg));
 }
 #else
-#define	zfsdev_compat_ioctl	NULL
+#define zfsdev_compat_ioctl NULL
 #endif
 
 static const struct file_operations zfsdev_fops = {
-	.open		= zfsdev_open,
-	.release	= zfsdev_release,
-	.unlocked_ioctl	= zfsdev_ioctl,
-	.mmap		= zfsdev_map,
-	.compat_ioctl	= zfsdev_compat_ioctl,
-	.owner		= THIS_MODULE,
+	.open = zfsdev_open,
+	.release = zfsdev_release,
+	.unlocked_ioctl = zfsdev_ioctl,
+	.mmap = zfsdev_map,
+	.compat_ioctl = zfsdev_compat_ioctl,
+	.owner = THIS_MODULE,
 };
 
 static struct miscdevice zfs_misc = {
-	.minor		= ZFS_DEVICE_MINOR,
-	.name		= ZFS_DRIVER,
-	.fops		= &zfsdev_fops,
+	.minor = ZFS_DEVICE_MINOR,
+	.name = ZFS_DRIVER,
+	.fops = &zfsdev_fops,
 };
 
 MODULE_ALIAS_MISCDEV(ZFS_DEVICE_MINOR);
 MODULE_ALIAS("devname:zfs");
 
-int
-zfsdev_attach(void)
+int zfsdev_attach(void)
 {
 	int error;
 
 	error = misc_register(&zfs_misc);
-	if (error == -EBUSY) {
+	if (error == -EBUSY)
+	{
 		/*
 		 * Fallback to dynamic minor allocation in the event of a
 		 * collision with a reserved minor in linux/miscdevice.h.
 		 * In this case the kernel modules must be manually loaded.
 		 */
 		printk(KERN_INFO "Shielded ZFS w/ acks: misc_register() with static minor %d "
-		    "failed %d, retrying with MISC_DYNAMIC_MINOR\n",
-		    ZFS_DEVICE_MINOR, error);
+						 "failed %d, retrying with MISC_DYNAMIC_MINOR\n",
+			   ZFS_DEVICE_MINOR, error);
 
 		zfs_misc.minor = MISC_DYNAMIC_MINOR;
 		error = misc_register(&zfs_misc);
@@ -314,20 +311,18 @@ zfsdev_attach(void)
 	return (error);
 }
 
-void
-zfsdev_detach(void)
+void zfsdev_detach(void)
 {
 	misc_deregister(&zfs_misc);
 }
 
 #ifdef ZFS_DEBUG
-#define	ZFS_DEBUG_STR	" (DEBUG mode)"
+#define ZFS_DEBUG_STR " (DEBUG mode)"
 #else
-#define	ZFS_DEBUG_STR	""
+#define ZFS_DEBUG_STR ""
 #endif
 
 zidmap_t *zfs_init_idmap;
-
 
 int thread_id = 0;
 
@@ -363,244 +358,269 @@ __attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_m
 }
 #endif
 
-__attribute__((unused)) static get_cmt_msg_t* decode_get_cmt_msg(char* msg, int msg_size) {
-	get_cmt_msg_t* get_cmt = kmalloc(sizeof(get_cmt_msg_t), GFP_KERNEL);
-	if (get_cmt == NULL) {
+__attribute__((unused)) static get_cmt_msg_t *decode_get_cmt_msg(char *msg, int msg_size)
+{
+	get_cmt_msg_t *get_cmt = kmalloc(sizeof(get_cmt_msg_t), GFP_KERNEL);
+	if (get_cmt == NULL)
+	{
 		printk(KERN_ERR "decode_get_cmt_msg: Failed to allocate memory for message data\n");
 		return NULL;
 	}
 
-	if (msg_size != ZFS_MAX_DATASET_NAME_LEN) {
+	if (msg_size != ZFS_MAX_DATASET_NAME_LEN)
+	{
 		printk(KERN_ERR "decode_get_cmt_msg: Invalid message size %d, expected %d\n", msg_size, ZFS_MAX_DATASET_NAME_LEN);
 		kfree(get_cmt);
 		return NULL;
 	}
 
 	memcpy(get_cmt->poolname, msg, ZFS_MAX_DATASET_NAME_LEN);
-	return get_cmt;  
+	return get_cmt;
 }
 
 static zil_commitment_t prev_tail_cmt; // keeps the latest ack-ed commitment
 
-static void notify_cmts_callback(struct sk_buff *skb) {
-  //struct sk_buff *skb_out;  
-  
-  struct nlmsghdr* nlh = (struct nlmsghdr *)skb->data;
-  int pid = nlh->nlmsg_pid; /* pid of sending process */
-  char* msg = (char *)nlmsg_data(nlh);
-  int msg_size = nlh->nlmsg_len - NLMSG_HDRLEN;
+static void notify_cmts_callback(struct sk_buff *skb)
+{
+	// struct sk_buff *skb_out;
 
-  uint64_t acknowledged_blk_id = 0;
-  memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
-  #if 0
+	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
+	int pid = nlh->nlmsg_pid; /* pid of sending process */
+	char *msg = (char *)nlmsg_data(nlh);
+	int msg_size = nlh->nlmsg_len - NLMSG_HDRLEN;
+
+	uint64_t acknowledged_blk_id = 0;
+	memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
+#if 0
   printk(KERN_INFO "notify_cmts (current pid=%d): received notification from pid=%d\
 	about blk_id=%lld \
 	(payload size=%d)\n", \
 	current->pid, pid, acknowledged_blk_id, \
 	msg_size);
-  #endif
-  mutex_enter(&ccf_lock);
-  int waiters_no = 0;
-  for (;;) {
-	
-	commitments_list_node_t* latest_cmt_node = list_tail(consumer_list_handle);
-	
-	if (latest_cmt_node == NULL) {
-		printk(KERN_INFO "############# consumer_list_handle is empty after waking up %d thread(s) with acknowledged_blk_id=%lld #############\n",
-			waiters_no, acknowledged_blk_id);
-		break;
-	}
-
-	zil_commitment_t* latest_cmt = latest_cmt_node->cmt;
-	if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= acknowledged_blk_id) {
-		ccf_waiter_t* zcw_ccf_waiter = NULL;
-		#if 0
-		printk(KERN_INFO "cmt_id=%lld, acknowledged_blk_id=%lld #############\n",\
-			latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], acknowledged_blk_id);
-		#endif
-		while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL) {
-			mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));	
-			zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
-			cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
-			mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
-			kmem_free(zcw_ccf_waiter, sizeof (ccf_waiter_t));
-			waiters_no++;
-		}
-		list_remove_tail(consumer_list_handle);
-		free_node(latest_cmt, sizeof(zil_commitment_t));
-		free_node(latest_cmt_node, sizeof(commitments_list_node_t));
-	}
-	else {
-		// nothing to process so far
-		break;
-	}
-  }
-  mutex_exit(&ccf_lock);
-}
-
-static char* serialize_recv_cmt(
-  const char* poolname, uint64_t blk_id, \
-  zio_cksum_t tail_commitment) {
-  char* dst_buf = kmalloc(sizeof(recv_cmt_msg_t), GFP_KERNEL);
-  memcpy(dst_buf, &(blk_id), sizeof(blk_id));
-  memcpy(dst_buf+sizeof(blk_id), poolname, \
-    ZFS_MAX_DATASET_NAME_LEN);
-  memcpy(dst_buf+sizeof(blk_id)+ZFS_MAX_DATASET_NAME_LEN, tail_commitment.zc_word, \
-    sizeof(zio_cksum_t));
-  return dst_buf;
-}
-
-
-static void get_cmts_callback(struct sk_buff *skb) {
-  struct sk_buff *skb_out;  
-  
-  struct nlmsghdr* nlh = (struct nlmsghdr *)skb->data;
-  int pid = nlh->nlmsg_pid; /* pid of sending process */
-  char* msg = (char *)nlmsg_data(nlh);
-  int msg_size = nlh->nlmsg_len;
-  // printk(KERN_INFO "get_cmts_callback: 1\n");
-  char* to_be_copied = NULL;
-
- 
-  get_cmt_msg_t* get_cmt = decode_get_cmt_msg(msg, sizeof(get_cmt_msg_t));
-  zil_commitment_t* latest_cmt = NULL;
-  commitments_list_node_t* latest_cmt_node = NULL;
-  #if 0
-  printk(KERN_INFO "get_cmts_callback: 2 w/ msg_size=%d from pid=%d, current pid=%d\n",\
-	msg_size, pid, current->pid);
-  #endif
-  hrtime_t sleep = 10000; // 10000 nanoseconds = 10 microseconds
-  hrtime_t wakeup = gethrtime() + sleep;
-  
-  for (;;) {
+#endif
 	mutex_enter(&ccf_lock);
-	// printk(KERN_INFO "get_cmts_callback: 3\n");
-	if (consumer_list_handle == NULL || list_is_empty(consumer_list_handle)) {
-		// printk(KERN_INFO "get_cmts_callback: consumer_list_handle == NULL || list_is_empty(consumer_list_handle)\n");
+	int waiters_no = 0;
+	for (;;)
+	{
 
-		int rc = -1,  iterations = 5e6;
-		while (rc == -1) {
-			wakeup = gethrtime() + sleep;
-			rc = cv_timedwait_hires(&ccf_thread_cv,
-					&ccf_lock, wakeup, USEC2NSEC(2),
-					CALLOUT_FLAG_ABSOLUTE);
-			if (rc == -1) {
-				if (iterations % 100000 == 0) {
-					printk(KERN_INFO "get_cmts_callback: timeout waiting for pool %s, iteration no=%d\n", \
-						get_cmt->poolname, iterations);
-				}
-				consumer_list_handle = &pending_commitments;
-				if (!list_is_empty(consumer_list_handle))
-					break;
-			}
-			iterations--;
-			if (iterations <= 0) {
-				printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
-				mutex_exit(&ccf_lock);
-				return;
-			}
-		}
-	}
-	// printk(KERN_INFO "get_cmts_callback: after 3\n");
+		commitments_list_node_t *latest_cmt_node = list_tail(consumer_list_handle);
 
-	if (!list_is_empty(consumer_list_handle)) {
-		latest_cmt_node = list_head(consumer_list_handle);
-		latest_cmt = latest_cmt_node->cmt;
-		if (prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] ==  -1) {
-			to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
-				latest_cmt->blk_digest);
-			prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-			printk(KERN_INFO "get_cmts_callback: this only happens once ..\n");
-			mutex_exit(&ccf_lock);
+		if (latest_cmt_node == NULL)
+		{
+			printk(KERN_INFO "############# consumer_list_handle is empty after waking up %d thread(s) with acknowledged_blk_id=%lld #############\n",
+				   waiters_no, acknowledged_blk_id);
 			break;
 		}
-		else {
-			while (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
-				// printk(KERN_INFO "get_cmts_callback: latest_cmt equals prev_tail_cmt ..\n");
-				int rc = -1, iterations = 5e6;
-				while (rc == -1) {
-					wakeup = gethrtime() + sleep;
-					rc = cv_timedwait_hires(&ccf_thread_cv,
-						&ccf_lock, wakeup, USEC2NSEC(2),
-						CALLOUT_FLAG_ABSOLUTE);
-					if (rc == -1) {
-						if (iterations % 100000 == 0) {
-							printk(KERN_INFO "get_cmts_callback: timeout.. waiting for pool %s, iteration no=%d\n", \
-								get_cmt->poolname, iterations);
-						}
-					}
-					iterations--;
-					if (iterations <= 0) {
-						printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
-						mutex_exit(&ccf_lock);
-						return;
-					}
-					latest_cmt_node = list_head(consumer_list_handle);
-					if (latest_cmt_node != NULL) {
-						latest_cmt = latest_cmt_node->cmt;
-						#if 0
-						printk(KERN_INFO "get_cmts_callback: timeout: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
-							(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
-						#endif
-						if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
-							break;
-					}
-					else {
-						//printk(KERN_INFO "get_cmts_callback: latest_cmt_node is NULL, exiting ..\n");
-					}
-				}
-				break;		
+
+		zil_commitment_t *latest_cmt = latest_cmt_node->cmt;
+		if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= acknowledged_blk_id)
+		{
+			ccf_waiter_t *zcw_ccf_waiter = NULL;
+#if 0
+		printk(KERN_INFO "cmt_id=%lld, acknowledged_blk_id=%lld #############\n",\
+			latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], acknowledged_blk_id);
+#endif
+			while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL)
+			{
+				mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
+				zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
+				cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
+				mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
+				kmem_free(zcw_ccf_waiter, sizeof(ccf_waiter_t));
+				waiters_no++;
 			}
-			//printk(KERN_INFO "get_cmts_callback: 4\n");
+			list_remove_tail(consumer_list_handle);
+			free_node(latest_cmt, sizeof(zil_commitment_t));
+			free_node(latest_cmt_node, sizeof(commitments_list_node_t));
+		}
+		else
+		{
+			// nothing to process so far
+			break;
+		}
+	}
+	mutex_exit(&ccf_lock);
+}
+
+static char *serialize_recv_cmt(
+	const char *poolname, uint64_t blk_id,
+	zio_cksum_t tail_commitment)
+{
+	char *dst_buf = kmalloc(sizeof(recv_cmt_msg_t), GFP_KERNEL);
+	memcpy(dst_buf, &(blk_id), sizeof(blk_id));
+	memcpy(dst_buf + sizeof(blk_id), poolname,
+		   ZFS_MAX_DATASET_NAME_LEN);
+	memcpy(dst_buf + sizeof(blk_id) + ZFS_MAX_DATASET_NAME_LEN, tail_commitment.zc_word,
+		   sizeof(zio_cksum_t));
+	return dst_buf;
+}
+
+static void get_cmts_callback(struct sk_buff *skb)
+{
+	struct sk_buff *skb_out;
+
+	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
+	int pid = nlh->nlmsg_pid; /* pid of sending process */
+	char *msg = (char *)nlmsg_data(nlh);
+	int msg_size = nlh->nlmsg_len;
+	// printk(KERN_INFO "get_cmts_callback: 1\n");
+	char *to_be_copied = NULL;
+
+	get_cmt_msg_t *get_cmt = decode_get_cmt_msg(msg, sizeof(get_cmt_msg_t));
+	zil_commitment_t *latest_cmt = NULL;
+	commitments_list_node_t *latest_cmt_node = NULL;
+#if 0
+  printk(KERN_INFO "get_cmts_callback: 2 w/ msg_size=%d from pid=%d, current pid=%d\n",\
+	msg_size, pid, current->pid);
+#endif
+	hrtime_t sleep = 10000; // 10000 nanoseconds = 10 microseconds
+	hrtime_t wakeup = gethrtime() + sleep;
+
+	for (;;)
+	{
+		mutex_enter(&ccf_lock);
+		// printk(KERN_INFO "get_cmts_callback: 3\n");
+		if (consumer_list_handle == NULL || list_is_empty(consumer_list_handle))
+		{
+			// printk(KERN_INFO "get_cmts_callback: consumer_list_handle == NULL || list_is_empty(consumer_list_handle)\n");
+
+			int rc = -1, iterations = 5e6;
+			while (rc == -1)
+			{
+				wakeup = gethrtime() + sleep;
+				rc = cv_timedwait_hires(&ccf_thread_cv,
+										&ccf_lock, wakeup, USEC2NSEC(2),
+										CALLOUT_FLAG_ABSOLUTE);
+				if (rc == -1)
+				{
+					if (iterations % 100000 == 0)
+					{
+						printk(KERN_INFO "get_cmts_callback: timeout waiting for pool %s, iteration no=%d\n",
+							   get_cmt->poolname, iterations);
+					}
+					consumer_list_handle = &pending_commitments;
+					if (!list_is_empty(consumer_list_handle))
+						break;
+				}
+				iterations--;
+				if (iterations <= 0)
+				{
+					printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
+					mutex_exit(&ccf_lock);
+					return;
+				}
+			}
+		}
+		// printk(KERN_INFO "get_cmts_callback: after 3\n");
+
+		if (!list_is_empty(consumer_list_handle))
+		{
 			latest_cmt_node = list_head(consumer_list_handle);
 			latest_cmt = latest_cmt_node->cmt;
-			to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
-				latest_cmt->blk_digest);
-			prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-			printk(KERN_INFO "get_cmts_callback: to send zil_blk_id=%llu\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);	
-			mutex_exit(&ccf_lock);
+			if (prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] == -1)
+			{
+				to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
+												  latest_cmt->blk_digest);
+				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
+				printk(KERN_INFO "get_cmts_callback: this only happens once ..\n");
+				mutex_exit(&ccf_lock);
+				break;
+			}
+			else
+			{
+				while (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
+				{
+					// printk(KERN_INFO "get_cmts_callback: latest_cmt equals prev_tail_cmt ..\n");
+					int rc = -1, iterations = 5e6;
+					while (rc == -1)
+					{
+						wakeup = gethrtime() + sleep;
+						rc = cv_timedwait_hires(&ccf_thread_cv,
+												&ccf_lock, wakeup, USEC2NSEC(2),
+												CALLOUT_FLAG_ABSOLUTE);
+						if (rc == -1)
+						{
+							if (iterations % 100000 == 0)
+							{
+								printk(KERN_INFO "get_cmts_callback: timeout.. waiting for pool %s, iteration no=%d\n",
+									   get_cmt->poolname, iterations);
+							}
+						}
+						iterations--;
+						if (iterations <= 0)
+						{
+							printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
+							mutex_exit(&ccf_lock);
+							return;
+						}
+						latest_cmt_node = list_head(consumer_list_handle);
+						if (latest_cmt_node != NULL)
+						{
+							latest_cmt = latest_cmt_node->cmt;
+#if 0
+						printk(KERN_INFO "get_cmts_callback: timeout: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
+							(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+#endif
+							if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
+								break;
+						}
+						else
+						{
+							// printk(KERN_INFO "get_cmts_callback: latest_cmt_node is NULL, exiting ..\n");
+						}
+					}
+					break;
+				}
+				// printk(KERN_INFO "get_cmts_callback: 4\n");
+				latest_cmt_node = list_head(consumer_list_handle);
+				latest_cmt = latest_cmt_node->cmt;
+				to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
+												  latest_cmt->blk_digest);
+				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
+				printk(KERN_INFO "get_cmts_callback: to send zil_blk_id=%llu\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+				mutex_exit(&ccf_lock);
+			}
+
+			break;
 		}
-		
-		break;
 	}
-  }
-  #if 0
+#if 0
   printk(KERN_INFO "get_cmts_callback: 6\n");
   printk(KERN_INFO "get_cmts_callback: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 	(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
-  #endif
+#endif
 
+	// create reply
 
-  // create reply
-  
-  // printk(KERN_INFO "Allocating skb with size: %d\n", msg_size);
-	
-  if (in_atomic()) {
-    printk(KERN_WARNING "Called in atomic context\n");
-  }
+	// printk(KERN_INFO "Allocating skb with size: %d\n", msg_size);
 
-  skb_out = nlmsg_new(msg_size, 0);
-  if (!skb_out) {
-    printk(KERN_ERR "get_cmts_callback: failed to allocate new skb size=%dB\n", msg_size);
-    return;
-  }
-  // printk(KERN_INFO "get_cmts_callback: 7\n");
-  // put received message into reply
-  nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
-  NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
-  
-  // printk(KERN_INFO "get_cmts_callback: 8\n");
-  
-  
-  memcpy(nlmsg_data(nlh), to_be_copied, get_size_of_recv_cmt());
-  kfree(to_be_copied);
-  kfree(get_cmt);
-  // printk(KERN_INFO "get_cmts_callback: 9\n");
+	if (in_atomic())
+	{
+		printk(KERN_WARNING "Called in atomic context\n");
+	}
 
-  int res = nlmsg_unicast(nl_sock_get_cmts, skb_out, pid);
-  if (res < 0)
-    printk(KERN_INFO "get_cmts_callback: error while sending skb to pid=%d\n", pid);
-  // printk(KERN_INFO "get_cmts_callback: 10\n");
+	skb_out = nlmsg_new(msg_size, 0);
+	if (!skb_out)
+	{
+		printk(KERN_ERR "get_cmts_callback: failed to allocate new skb size=%dB\n", msg_size);
+		return;
+	}
+	// printk(KERN_INFO "get_cmts_callback: 7\n");
+	// put received message into reply
+	nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
+	NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
+
+	// printk(KERN_INFO "get_cmts_callback: 8\n");
+
+	memcpy(nlmsg_data(nlh), to_be_copied, get_size_of_recv_cmt());
+	kfree(to_be_copied);
+	kfree(get_cmt);
+	// printk(KERN_INFO "get_cmts_callback: 9\n");
+
+	int res = nlmsg_unicast(nl_sock_get_cmts, skb_out, pid);
+	if (res < 0)
+		printk(KERN_INFO "get_cmts_callback: error while sending skb to pid=%d\n", pid);
+	// printk(KERN_INFO "get_cmts_callback: 10\n");
 }
 
 #if 0 // this is the old callback function, which is not used anymore
@@ -661,11 +681,11 @@ static void get_cmts_callback(struct sk_buff *skb) {
 	if (list_is_empty(consumer_list)){
 		//cv_wait(&ccf_thread_cv, &ccf_lock);	
 		int rc = -1, iterations = 10e6;
-		#if 0
+#if 0
 		printk(KERN_INFO "netlink_test: consumer_list=%p for pool: %s (request_id: %d)\n", \
 				(void*) consumer_list, \
 				msg_data->poolname, msg_data->request_id);
-		#endif	
+#endif	
 		while (rc == -1) {
 			wakeup = gethrtime() + sleep;
 			rc = cv_timedwait_hires(&ccf_thread_cv,
@@ -695,11 +715,11 @@ static void get_cmts_callback(struct sk_buff *skb) {
 	else {
 		latest_cmt = list_tail(consumer_list);
 		if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
-			#if 1
+#if 1
 			printk(KERN_INFO "netlink_test (it should not be here --- reading from consumer_list=%p): same_blk_id pool: %s (request_id: %d) block_id=%llu\n", \
 				(void*) consumer_list, \
 				latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
-			#endif
+#endif
 			//cv_broadcast(&zil_thread_cv);
 			int rc = -1;
 			//cv_wait(&ccf_thread_cv, &ccf_lock);	
@@ -712,17 +732,17 @@ static void get_cmts_callback(struct sk_buff *skb) {
 				if (!list_is_empty(consumer_list_handle))
 					break;
 			}
-			#if 0
+#if 0
 			printk(KERN_INFO "netlink_test (reading from consumer_list=%p): woken up pool: %s (request_id: %d) block_id=%llu\n", \
 				(void*) consumer_list, \
 				latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
-			#endif
+#endif
 			mutex_exit(&ccf_lock);
-			#if 0
+#if 0
 			printk(KERN_INFO "netlink_test (reading from consumer_list=%p): exiting the mtx pool: %s (request_id: %d) block_id=%llu\n", \
 				(void*) consumer_list, \
 				latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
-			#endif
+#endif
 		} 
 		else {
 			int iteration = 0;
@@ -730,25 +750,25 @@ static void get_cmts_callback(struct sk_buff *skb) {
 				if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= msg_data->request_id) {
 					prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
 					ccf_waiter_t* zcw_ccf_waiter = NULL;
-					#if 0
+#if 0
 					printk(KERN_INFO "netlink_test (reading from consumer_list=%p): about to update the pool: %s (request_id: %d) block_id=%llu\n", \
 						(void*) consumer_list, \
 						latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3]);
-					#endif
+#endif
 
 					while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL) {
-						#if 0
+#if 0
 						printk(KERN_INFO "netlink_test (reading from consumer_list=%p): after getting the zwc handle: %s (request_id: %d) block_id=%llu zcw=%p and *zcw=%p\n", \
 							(void*) consumer_list, \
 							latest_cmt->name, msg_data->request_id, (u_longlong_t)latest_cmt->blk_num.zc_word[3], (void*)zcw_ccf_waiter,(void*)(zcw_ccf_waiter));
 						
 						printk(KERN_INFO "netlink_test: here on blk_id=%llu\n", zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id);
-						#endif
+#endif
 						mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
-						#if 0
+#if 0
 						printk(KERN_INFO "netlink_test: wake up waiter on blk_id=%llu  iteration=%d\n",\
 							zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_id, iteration);
-						#endif
+#endif
 						zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
 						cv_broadcast(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_cv));
 						mutex_exit(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));
@@ -779,14 +799,14 @@ static void get_cmts_callback(struct sk_buff *skb) {
 		break;
 	}
   }
-  #if 0
+#if 0
   if (latest_cmt == NULL) {
   	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s returns NULL\n", msg_data->request_id, msg_data->poolname);
   }
   else {
 	printk(KERN_INFO "netlink_test: Reply for request_id: %d for pool: %s for blk %llu\n", msg_data->request_id, msg_data->poolname, (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 	}
-  #endif
+#endif
  
   // create reply
   skb_out = nlmsg_new(msg_size, 0);
@@ -823,10 +843,12 @@ openzfs_init_os(void)
 {
 	int error;
 
-	if ((error = zfs_kmod_init()) != 0) {
+	if ((error = zfs_kmod_init()) != 0)
+	{
 		printk(KERN_NOTICE "Shielded ZFS w/ acks: Failed to Load ZFS Filesystem v%s-%s%s"
-		    ", rc = %d\n", ZFS_META_VERSION, ZFS_META_RELEASE,
-		    ZFS_DEBUG_STR, error);
+						   ", rc = %d\n",
+			   ZFS_META_VERSION, ZFS_META_RELEASE,
+			   ZFS_DEBUG_STR, error);
 
 		return (-error);
 	}
@@ -834,14 +856,15 @@ openzfs_init_os(void)
 	zfs_sysfs_init();
 
 	printk(KERN_NOTICE "Shielded ZFS w/ acked commitments: Loaded module v%s-%s%s, "
-	    "ZFS pool version %s, ZFS filesystem version %s\n",
-	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
-	    SPA_VERSION_STRING, ZPL_VERSION_STRING);
+					   "ZFS pool version %s, ZFS filesystem version %s\n",
+		   ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
+		   SPA_VERSION_STRING, ZPL_VERSION_STRING);
 #ifdef HAVE_LINUX_EXPERIMENTAL
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: Using ZFS with kernel %s is EXPERIMENTAL and "
-	    "SERIOUS DATA LOSS may occur!\n", utsname()->release);
+					   "SERIOUS DATA LOSS may occur!\n",
+		   utsname()->release);
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: Please report your results at: "
-	    "https://github.com/openzfs/zfs/issues/new\n");
+					   "https://github.com/openzfs/zfs/issues/new\n");
 #endif
 #ifndef CONFIG_FS_POSIX_ACL
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: Posix ACLs disabled by kernel\n");
@@ -849,34 +872,34 @@ openzfs_init_os(void)
 
 	zfs_init_idmap = (zidmap_t *)zfs_get_init_idmap();
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: sockets initialization ...\n");
-  	
+
 	cv_init(&zil_thread_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&ccf_thread_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&ccf_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zil_thread_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&ccf_thread_lock, NULL, MUTEX_DEFAULT, NULL);
 
+	struct netlink_kernel_cfg get_cmts_cfg = {
+		.input = get_cmts_callback,
+	};
 
-
-  	struct netlink_kernel_cfg get_cmts_cfg = {
-    	.input = get_cmts_callback,
-  	};
-	
 	struct netlink_kernel_cfg cfg_notify_cmts = {
-    	.input = notify_cmts_callback,
-  	};
+		.input = notify_cmts_callback,
+	};
 	prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = -1;
-  	nl_sock_get_cmts = netlink_kernel_create(&init_net, GET_CMTS_SOCK, &get_cmts_cfg);
-  	if (!nl_sock_get_cmts) {
-    	printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for getting cmts.\n");
-    	return (-1);
-  	}
+	nl_sock_get_cmts = netlink_kernel_create(&init_net, GET_CMTS_SOCK, &get_cmts_cfg);
+	if (!nl_sock_get_cmts)
+	{
+		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for getting cmts.\n");
+		return (-1);
+	}
 
 	nl_sock_notify = netlink_kernel_create(&init_net, NOTIFY_CMTS_SOCK, &cfg_notify_cmts);
-  	if (!nl_sock_notify) {
-    	printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for notifying/receiving cmts.\n");
-    	return (-1);
-  	}
+	if (!nl_sock_notify)
+	{
+		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for notifying/receiving cmts.\n");
+		return (-1);
+	}
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: sockets initialization is successful ..\n");
 	return (0);
 }
@@ -895,14 +918,11 @@ openzfs_fini_os(void)
 	mutex_destroy(&zil_thread_lock);
 	mutex_destroy(&ccf_thread_lock);
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: Unloaded module v%s-%s%s\n",
-	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR);
+		   ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR);
 }
-
 
 extern int __init zcommon_init(void);
 extern void zcommon_fini(void);
-
-
 
 static int __init
 openzfs_init(void)
@@ -917,8 +937,6 @@ openzfs_init(void)
 	if ((err = openzfs_init_os()) != 0)
 		goto openzfs_os_failed;
 	return (0);
-
-
 
 openzfs_os_failed:
 	zstd_fini();
