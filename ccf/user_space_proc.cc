@@ -57,12 +57,10 @@ static void *notify_cmts(void *arg_poolname) {
 
     //randomized_sleeps();
     recv_cmt_msg_t *last_cmt = recv_queue.pop();
-    while ((last_cmt == nullptr) && (last_acked_blk_id < (c_total_ops - 1))) {
+    while ((last_cmt == nullptr)) {
       last_cmt = recv_queue.pop();
     }
-    if (last_acked_blk_id == (c_total_ops - 1)) {
-      break;
-    }
+    
 
     struct nlmsghdr *nlh =
         (struct nlmsghdr *)malloc(NLMSG_SPACE(sizeof(notify_cmt_msg_t)));

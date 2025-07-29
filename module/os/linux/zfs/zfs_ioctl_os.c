@@ -402,15 +402,22 @@ static void notify_cmts_callback(struct sk_buff *skb) {
   mutex_enter(&ccf_lock);
   int waiters_no = 0;
   for (;;) {
-	zil_commitment_t* latest_cmt = list_tail(consumer_list_handle);
-	if (latest_cmt == NULL) {
-		printk(KERN_INFO "############# consumer_list_handle is empty after waking up %d thread(s) #############\n",
-			waiters_no);
+	
+	commitments_list_node_t* latest_cmt_node = list_tail(consumer_list_handle);
+	
+	if (latest_cmt_node == NULL) {
+		printk(KERN_INFO "############# consumer_list_handle is empty after waking up %d thread(s) with acknowledged_blk_id=%lld #############\n",
+			waiters_no, acknowledged_blk_id);
 		break;
 	}
 
+	zil_commitment_t* latest_cmt = latest_cmt_node->cmt;
 	if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= acknowledged_blk_id) {
 		ccf_waiter_t* zcw_ccf_waiter = NULL;
+		#if 0
+		printk(KERN_INFO "cmt_id=%lld, acknowledged_blk_id=%lld #############\n",\
+			latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], acknowledged_blk_id);
+		#endif
 		while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL) {
 			mutex_enter(&(zcw_ccf_waiter->zcw_ccf_ptr->zcw_ccf_lock));	
 			zcw_ccf_waiter->zcw_ccf_ptr->zcw_block_ccf_acked = B_TRUE;
@@ -421,6 +428,7 @@ static void notify_cmts_callback(struct sk_buff *skb) {
 		}
 		list_remove_tail(consumer_list_handle);
 		free_node(latest_cmt, sizeof(zil_commitment_t));
+		free_node(latest_cmt_node, sizeof(commitments_list_node_t));
 	}
 	else {
 		// nothing to process so far
@@ -456,6 +464,7 @@ static void get_cmts_callback(struct sk_buff *skb) {
  
   get_cmt_msg_t* get_cmt = decode_get_cmt_msg(msg, sizeof(get_cmt_msg_t));
   zil_commitment_t* latest_cmt = NULL;
+  commitments_list_node_t* latest_cmt_node = NULL;
   #if 0
   printk(KERN_INFO "get_cmts_callback: 2 w/ msg_size=%d from pid=%d, current pid=%d\n",\
 	msg_size, pid, current->pid);
@@ -495,7 +504,8 @@ static void get_cmts_callback(struct sk_buff *skb) {
 	// printk(KERN_INFO "get_cmts_callback: after 3\n");
 
 	if (!list_is_empty(consumer_list_handle)) {
-		latest_cmt = list_head(consumer_list_handle);
+		latest_cmt_node = list_head(consumer_list_handle);
+		latest_cmt = latest_cmt_node->cmt;
 		if (prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] ==  -1) {
 			to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
 				latest_cmt->blk_digest);
@@ -525,8 +535,9 @@ static void get_cmts_callback(struct sk_buff *skb) {
 						mutex_exit(&ccf_lock);
 						return;
 					}
-					latest_cmt = list_head(consumer_list_handle);
-					if (latest_cmt != NULL) {
+					latest_cmt_node = list_head(consumer_list_handle);
+					if (latest_cmt_node != NULL) {
+						latest_cmt = latest_cmt_node->cmt;
 						#if 0
 						printk(KERN_INFO "get_cmts_callback: timeout: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 							(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
@@ -534,15 +545,19 @@ static void get_cmts_callback(struct sk_buff *skb) {
 						if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
 							break;
 					}
+					else {
+						//printk(KERN_INFO "get_cmts_callback: latest_cmt_node is NULL, exiting ..\n");
+					}
 				}
 				break;		
 			}
-			// printk(KERN_INFO "get_cmts_callback: 4\n");
-			latest_cmt = list_head(consumer_list_handle);
+			//printk(KERN_INFO "get_cmts_callback: 4\n");
+			latest_cmt_node = list_head(consumer_list_handle);
+			latest_cmt = latest_cmt_node->cmt;
 			to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],\
 				latest_cmt->blk_digest);
 			prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-			// printk(KERN_INFO "get_cmts_callback: 5\n");	
+			printk(KERN_INFO "get_cmts_callback: to send zil_blk_id=%llu\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);	
 			mutex_exit(&ccf_lock);
 		}
 		

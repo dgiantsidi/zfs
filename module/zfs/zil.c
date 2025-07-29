@@ -1829,9 +1829,11 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		if (head_copy == NULL) {
 			zfs_dbgmsg(" [SOS: head_copy is NULL] zil_tail_commitment.waiters is empty\n");
 		}
+		/*
 		else {
-			head_copy = zcw_copy;
+			//head_copy = zcw_copy;
 		}
+		*/
 		#if 0
 		ccf_waiter_t* head_copy_ptr = ((ccf_waiter_t*)head_copy);
 		zfs_dbgmsg(" [Step 5: fetch list_head] (head_copy_ptr)->zcw_block_id=%d (%d) zcw->zcw_ccf_ptr:%p *zcw_copy:%p \
@@ -1875,8 +1877,9 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		mutex_exit(&zcw->zcw_lock);
 	}
 	consumer_list_handle = &pending_commitments;
-
-	list_insert_head(&pending_commitments, tail_commitment_copy);
+	commitments_list_node_t* to_be_inserted = alloc_node(sizeof(commitments_list_node_t));
+	to_be_inserted->cmt = tail_commitment_copy;
+	list_insert_head(&pending_commitments, to_be_inserted);
 
 	#if 0
 	zfs_dbgmsg(" notify ccf-thread block id=%llu which will read from %p\n", \
