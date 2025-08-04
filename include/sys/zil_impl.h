@@ -151,6 +151,7 @@ typedef struct ccf_cond_var {
 	boolean_t zcw_block_ccf_acked; /* B_TRUE if block_id is CCF-acked*/
 	kcondvar_t	zcw_ccf_cv;		/* signalled when "ccf_done" */
 	kmutex_t	zcw_ccf_lock;	/* protects fields of this struct */
+	hrtime_t start_ts;
 } ccf_cond_var_t;
 
 typedef struct ccf_waiter {
