@@ -24,8 +24,8 @@ int main(int args, char* argv[]) {
 
 	wait_for_enter("open()");
 
-	std::string to_be_written = "hello, this is Dimitra from ZFS";
-	to_be_written += argv[2];
+	std::string to_be_written = "hello Dimitra" +std::string(argv[2]);
+	//to_be_written += argv[2];
 	auto len = write(fd, to_be_written.c_str(), to_be_written.size());
 	while (len < to_be_written.size()) {
 		auto offset = len;

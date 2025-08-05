@@ -479,7 +479,7 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 		not_initialized = 0;
 		init(&cksum_map);
 		mutex_init(&my_mutex, NULL, MUTEX_DEFAULT, NULL);
-		ccf_state_init(&ccf_zil_commitments);
+		// ccf_state_init(&ccf_zil_commitments);
 		zils_blocks_commitments.count = 0;
 		zils_blocks_commitments.cmt_data = NULL; 
 		zils_blocks_commitments.next = NULL;

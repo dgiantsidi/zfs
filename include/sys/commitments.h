@@ -65,7 +65,7 @@ __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char
 __attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
 
 
-
+/*
 // 2nd idea
 struct ccf_state {
 	char name[ZFS_MAX_DATASET_NAME_LEN]; 
@@ -83,3 +83,4 @@ __attribute__((unused)) extern void ccf_state_cmp(ccf_state_t* ccf_zil_commitmen
 //__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
 //__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
 
+*/

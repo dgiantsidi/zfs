@@ -293,7 +293,11 @@ __attribute__((unused)) void dump_zil_commitment2(const zil_commitment_t* cmt) {
 }
 
 __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments) {
-  
+  // todo: return null if ccf_zil_header_commitments is NULL
+  if (ccf_zil_header_commitments == NULL) {
+    zfs_dbgmsg(" ccf_zil_header_commitments is NULL!\n");
+    return NULL;
+  }
   #if 1
   dyn_array_commitments_t* head = ccf_zil_header_commitments;
   int count = head->count;
@@ -367,6 +371,7 @@ __attribute__((unused)) void ccf_zil_commitments_protocol(dyn_array_commitments_
 }
 #endif
 
+#if 0
 // 2nd idea
 __attribute__((unused)) void ccf_state_init(ccf_state_t* ccf_zil_commitments) {
   zfs_dbgmsg("\n");
@@ -479,3 +484,4 @@ __attribute__((unused)) extern void ccf_state_cmp(ccf_state_t* ccf_zil_commitmen
   }
   return ;
 }
+#endif

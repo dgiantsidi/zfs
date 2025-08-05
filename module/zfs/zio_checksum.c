@@ -149,8 +149,9 @@ static void verify_path_compute_fletcher_self_checksumming(zil_chain_t* zilc, ab
 	(void) zilc;
 	(void) cur_block_cksum;
 	abd_fletcher_4_impl(abd, size, acd);
-	ccf_state_cmp(&ccf_zil_commitments,\
-		acd->acd_zcp->zc_word); 
+	// TODO:
+	//ccf_state_cmp(&ccf_zil_commitments,
+	//	acd->acd_zcp->zc_word); 
 }
 
 
@@ -165,9 +166,9 @@ static  __attribute__((unused)) void verify_path_compute_sha256_self_checksummin
 	(void) zilc;
 	(void) cur_block_cksum;
 	abd_checksum_sha512_native(abd, size, ctx_template, zcp);
-	
-	ccf_state_cmp(&ccf_zil_commitments,\
-		zcp->zc_word); 
+	// TODO:
+	//ccf_state_cmp(&ccf_zil_commitments,
+	//	zcp->zc_word); 
 }
 
 static __attribute__((unused)) void compute_path_compute_sha256_self_checksumming(zil_chain_t* zilc, \
@@ -218,34 +219,45 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 	zil_chain_t* zilc,\
 	abd_t *abd, size_t size, const void *ctx_template, zio_cksum_t *zcp,\
 	zio_cksum_t* cur_block_cksum) {
+	boolean_t zdb_context = (starting_blk_cmt == NULL && final_blk_cmt == NULL);
    // check if it is empty; there is no previous block
    if (is_empty(previous_blk_hash) > 0) {
 	   zfs_dbgmsg(" It should be the header, there is no previous blk\
 		for blk_seqno=%llu\tsize=%llu\n", \
 		(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
 
-	   if (memcmp(cur_block_cksum->zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
-		   zfs_dbgmsg(" zil headers match\n");
-	   }
-	   else {
-		   zfs_dbgmsg( " ERROR, zil headers do not match!\n");
-	   }
+		if (zdb_context) {
+			zfs_dbgmsg(" starting_blk_cmt is NULL, this is executed in a zdb-like context\n");
+		}
+		else {
+			if (memcmp(cur_block_cksum->zc_word, starting_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0) {
+					zfs_dbgmsg(" zil headers match\n");
+			}
+			else {
+				zfs_dbgmsg( " ERROR, zil headers do not match!\n");
+			}
+		}
 	
 	   if (starting_blk_cmt != NULL && final_blk_cmt != NULL) {
+			zc_eck first_val =  get_hash(&recovery_map, &(starting_blk_cmt->blk_num));
+			abd_checksum_sha512_native(abd, size, ctx_template, zcp);
 
-	   zc_eck first_val =  get_hash(&recovery_map, &(starting_blk_cmt->blk_num));
-	   abd_checksum_sha512_native(abd, size, ctx_template, zcp);
-
-	   // todo: maybe we also keep the previous blk digest as part of the zil header commitment to calculate the first one?
-	   zcp->zc_word[0] = first_val.zc_word[0];
-	   zcp->zc_word[1] = first_val.zc_word[1];
-	   zcp->zc_word[2] = first_val.zc_word[2];
-	   zcp->zc_word[3] = first_val.zc_word[3];
-	   // todo: check that the computed hash equals the stored in the map (check the starting point is correct)
-	   }
+			// todo: maybe we also keep the previous blk digest as part of the zil header commitment to calculate the first one?
+			zcp->zc_word[0] = first_val.zc_word[0];
+			zcp->zc_word[1] = first_val.zc_word[1];
+			zcp->zc_word[2] = first_val.zc_word[2];
+			zcp->zc_word[3] = first_val.zc_word[3];
+			// todo: check that the computed hash equals the stored in the map (check the starting point is correct)
+		}
 	   else {
-					   zfs_dbgmsg(" starting_blk_cmt or final_blk_cmt is NULL, cannot compute the hash\n");
-
+			zfs_dbgmsg(" zdb_context=%d so we have copied the expected cksum for this blk=%llu\n", zdb_context, 
+				(u_longlong_t)cur_block_cksum->zc_word[ZIL_ZC_SEQ]);
+			zc_eck first_val =  get_hash(&recovery_map, cur_block_cksum);
+			zcp->zc_word[0] = first_val.zc_word[0];
+			zcp->zc_word[1] = first_val.zc_word[1];
+			zcp->zc_word[2] = first_val.zc_word[2];
+			zcp->zc_word[3] = first_val.zc_word[3];
+			return;
 	   }
    }
    else {
@@ -779,10 +791,22 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		if (checksum == ZIO_CHECKSUM_ZILOG2) {
 			zil_chain_t zilc;
 			abd_copy_to_buf(&zilc, abd, sizeof (zil_chain_t));
-
-			zfs_dbgmsg(" zilc.zc_eck=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[0], \
-				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[1], (u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[2], \
-				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[3]);
+			
+			zfs_dbgmsg(" zilc.zc_eck=%016llx:%016llx:%016llx:%016llx -- bp->blk_cksum=%016llx:%016llx:%016llx:%016llx\
+				zilc.zc_next_blk.blk_cksum=%016llx:%016llx:%016llx:%016llx\n", 
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[0], \
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[1], \
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[2], \
+				(u_longlong_t)zilc.zc_eck.zec_cksum.zc_word[3], \
+				(u_longlong_t)bp->blk_cksum.zc_word[0], \
+				(u_longlong_t)bp->blk_cksum.zc_word[1], \
+				(u_longlong_t)bp->blk_cksum.zc_word[2], \
+				(u_longlong_t)bp->blk_cksum.zc_word[3],\
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], \
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1], \
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[2], \
+				(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[3]);
+			
 			print_blk(zio->io_bp);
 			
 			uint64_t nused = P2ROUNDUP_TYPED(zilc.zc_nused,
@@ -844,6 +868,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 	zio_cksum_t actual_cksum, expected_cksum;
 	zio_eck_t eck;
 	int byteswap;
+	static int initialized = 0;
 
 	if (checksum >= ZIO_CHECKSUM_FUNCTIONS || ci->ci_func[0] == NULL)
 		return (SET_ERROR(EINVAL));
@@ -905,13 +930,19 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 			byteswap_uint64_array(&verifier, sizeof (zio_cksum_t));
 
 		expected_cksum = eck.zec_cksum;
+		if (initialized == 0 && checksum == ZIO_CHECKSUM_ZILOG2 && starting_blk_cmt == NULL && final_blk_cmt == NULL) {
+			initialized = 1;
+			zfs_dbgmsg(" initialize the recovery map in blk=%llu\n", (u_longlong_t)verifier.zc_word[ZIL_ZC_SEQ]);
+			append_hash(&recovery_map, &(verifier), &(expected_cksum), 5);
+		}
 
+		
 		abd_copy_from_buf_off(abd, &verifier, eck_offset,
 		    sizeof (zio_cksum_t));
 
 		ci->ci_func[byteswap](abd, size,
 		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
-
+		
 		abd_copy_from_buf_off(abd, &expected_cksum, eck_offset,
 		    sizeof (zio_cksum_t));
 

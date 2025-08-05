@@ -21,4 +21,4 @@ extern zil_commitment_t zil_tail_commitment;
 
 
 
-extern ccf_state_t ccf_zil_commitments;
+// extern ccf_state_t ccf_zil_commitments;
