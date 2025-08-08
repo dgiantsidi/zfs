@@ -4135,6 +4135,7 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 
 	nvpair_t *elem = NULL;
 	const char *nm;
+	int error = 0;
 
 	/*
 	 * If we are opening the checkpointed state of the pool by
@@ -4178,7 +4179,7 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 	 */
 
 	selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
-        selected_ub_digest = kmem_alloc(sizeof(*selected_ub_digest), KM_SLEEP);
+	selected_ub_digest = kmem_alloc(sizeof(*selected_ub_digest), KM_SLEEP);
 	prev_ub_digest = kmem_alloc(sizeof(*prev_ub_digest), KM_SLEEP);
 	new_ub_digest = kmem_alloc(sizeof(*new_ub_digest), KM_SLEEP);
 
@@ -4220,6 +4221,7 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 		zfs_dbgmsg("prev ub digest: %s", prev_ub_digest->digest);
 		zfs_dbgmsg("new ub digest: %s", new_ub_digest->digest);
 		// hash digest of the selected uberblock
+		kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
 		selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
 		uberblock_serialize(ub, selected_ub_hex);
 		ub_hex_to_digest(selected_ub_hex, selected_ub_digest);
@@ -4228,23 +4230,20 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 		// match the selected uberblock against two provided uberblock
 		if (strcmp(selected_ub_digest->digest, prev_ub_digest->digest) == 0 || strcmp(selected_ub_digest->digest, new_ub_digest->digest) == 0) {
 			zfs_dbgmsg("commitment verification successful. uberblock hash digest: %s", selected_ub_digest->digest);
-
-			kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
-			kmem_free(selected_ub_digest, sizeof(*selected_ub_digest));
-			kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
-			kmem_free(new_ub_digest, sizeof(*new_ub_digest));
 		} else {
 			zfs_dbgmsg("ERROR: uberblock mismatch!");
 			zfs_dbgmsg("provided first uberblock digest in hex: %s", prev_ub_digest->digest);
 			zfs_dbgmsg("provided second uberblock digest in hex: %s", new_ub_digest->digest);
 			zfs_dbgmsg("selected uberblock digest by zfs: %s", selected_ub_digest->digest);
-
-			kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
-			kmem_free(selected_ub_digest, sizeof(*selected_ub_digest));
-			kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
-			kmem_free(new_ub_digest, sizeof(*new_ub_digest));
-			return SET_ERROR(EINVAL);
+			error = SET_ERROR(EINVAL);
 		}
+	}
+	kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
+	kmem_free(selected_ub_digest, sizeof(*selected_ub_digest));
+	kmem_free(prev_ub_digest, sizeof(*prev_ub_digest));
+	kmem_free(new_ub_digest, sizeof(*new_ub_digest));
+	if (error != 0) {
+		return error;
 	}
 
 	if (spa->spa_load_max_txg != UINT64_MAX) {
