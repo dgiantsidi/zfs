@@ -4221,8 +4221,6 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 		zfs_dbgmsg("prev ub digest: %s", prev_ub_digest->digest);
 		zfs_dbgmsg("new ub digest: %s", new_ub_digest->digest);
 		// hash digest of the selected uberblock
-		kmem_free(selected_ub_hex, sizeof(*selected_ub_hex));
-		selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
 		uberblock_serialize(ub, selected_ub_hex);
 		ub_hex_to_digest(selected_ub_hex, selected_ub_digest);
 
