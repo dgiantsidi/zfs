@@ -2196,17 +2196,20 @@ retry:
 	 * Place for prepare() callback
 	 * We do prepare() right before the uberblock update
 	 */
-	// @dimitra: FIXME!
+
 	// hrtime_t ms_delay = 10;
 	// zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
+
+	// todo: find the digest into cksum_map with zils_block_commitments or copy_commitments2() does the job?
+
 	ccf_zil_header_commitments = copy_commitments2(ccf_zil_header_commitments, zils_blocks_commitments);
+
 	ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	//ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
-	// ccf_state_get(&ccf_zil_commitments);
-	// ccf_state_cleanup(&ccf_zil_commitments);
+	#if 1
 	mutex_enter(&my_mutex);
 	cleanup_global_variable(&cksum_map); // todo: remove this,
 	mutex_exit(&my_mutex);
+	#endif
 // ...  for the tail commitment we only need the previous one, not the txg all tail commitments ..
 
 	if (spa_multihost(spa))
