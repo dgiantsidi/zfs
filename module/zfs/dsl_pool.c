@@ -479,7 +479,7 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 		not_initialized = 0;
 		init(&cksum_map);
 		mutex_init(&my_mutex, NULL, MUTEX_DEFAULT, NULL);
-		// ccf_state_init(&ccf_zil_commitments);
+		
 		zils_blocks_commitments.count = 0;
 		zils_blocks_commitments.cmt_data = NULL; 
 		zils_blocks_commitments.next = NULL;
@@ -599,6 +599,7 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 	(void) ds;
 	(void) objset_count;
 	(void) txg;
+	
 	#if 1
 	objset_t *os = ds->ds_objset;
 	char name[100];

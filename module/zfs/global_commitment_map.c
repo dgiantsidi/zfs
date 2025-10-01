@@ -8,5 +8,3 @@ zil_commitment_t zil_tail_commitment;
 
 zil_commitment_t* starting_blk_cmt;
 zil_commitment_t* final_blk_cmt;
-
-//ccf_state_t ccf_zil_commitments;

@@ -1,8 +1,6 @@
 #include <sys/map.h>
 
 
-
-
 // function definitions
 
 __attribute__((unused))  void init(C_map_t *map) {
@@ -12,21 +10,25 @@ __attribute__((unused))  void init(C_map_t *map) {
 
 __attribute__((unused))  void cleanup_global_variable(C_map_t *map) {
   // perform cleanup tasks here
+  int count_of_elems = 0;
   for (int i = 0; i < N_BUCKETS; i++) {
     if (map->hash_map[i] != NULL) {
       C_map_node_t *tmp = map->hash_map[i];
       while (tmp != NULL) {
         C_map_node_t *next = tmp->next;
         free_node(tmp, sizeof(C_map_node_t));
+        count_of_elems++;
         tmp = next;
       }
     }
   }
   init(map);
+  zfs_dbgmsg(" %s: cleaned up %d elements\n", __func__, count_of_elems);
 }
 
 __attribute__((unused))  C_map_node_t **get_bucket(C_map_t *map, const cksum_seqno *key,
                           const zc_eck *value) {
+  int count = 0;
   for (int i = 0; i < N_BUCKETS; i++) {
     if (map->hash_map[i] != NULL) {
       if (memcmp(map->hash_map[i]->key.zc_word, key->zc_word,
@@ -37,7 +39,7 @@ __attribute__((unused))  C_map_node_t **get_bucket(C_map_t *map, const cksum_seq
         
         if (memcmp(map->hash_map[i]->key.zc_word, key->zc_word,
                    sizeof(cksum_seqno)) == 0) {
-          zfs_dbgmsg(" the record already exists\n");
+          zfs_dbgmsg(" a record for blk_no=%llu already exists\n", (u_longlong_t)key->zc_word[ZIL_ZC_SEQ]);
           if (memcmp(map->hash_map[i]->value.zc_word, value->zc_word, sizeof(zc_eck)) != 0) {
             zfs_dbgmsg(" error in %s, dublicate different hashes\n", __func__);
           }
@@ -50,6 +52,8 @@ __attribute__((unused))  C_map_node_t **get_bucket(C_map_t *map, const cksum_seq
     }
   }
   // should never reach at this point anyways
+  zfs_dbgmsg(" ** should never reach at this point **\n");
+  ASSERT(0);
   return NULL;
 }
 
@@ -61,7 +65,7 @@ __attribute__((unused))  int record_exists(const C_map_node_t* node, const cksum
 __attribute__((unused))  void append_hash(C_map_t *map, const cksum_seqno *key, const zc_eck *value,
                  const txg_birth txg) {
   // zfs_dbgmsg(" %s\n", __func__);
-
+#if 1
   C_map_node_t **head = get_bucket(map, key, value);
   if (!head) {
     return;
@@ -91,10 +95,12 @@ __attribute__((unused))  void append_hash(C_map_t *map, const cksum_seqno *key, 
     (*head)->value = *value;
     (*head)->next = NULL; // initialize the next pointer
   }
+  #endif
   return;
 }
 
 __attribute__((unused))  zc_eck get_hash(C_map_t *map, const cksum_seqno *key) {
+  int count = 0;
   // zfs_dbgmsg(" %s\n", __func__);
   C_map_node_t **bucket = get_bucket(map, key, NULL);
   if (bucket && *bucket) {
@@ -105,13 +111,18 @@ __attribute__((unused))  zc_eck get_hash(C_map_t *map, const cksum_seqno *key) {
                  (llu_t)tmp->key.zc_word[0], (llu_t)tmp->key.zc_word[1],\
                  (llu_t)tmp->key.zc_word[2], (llu_t)tmp->key.zc_word[3]);
       #endif
-      if (memcmp(tmp->key.zc_word, key->zc_word, sizeof(cksum_seqno)) == 0)
+      if (memcmp(tmp->key.zc_word, key->zc_word, sizeof(cksum_seqno)) == 0) {
+        zfs_dbgmsg(" found key after count=%d iterations\n", count);
         return tmp->value;
+      }
       else {
+        count++;
         tmp = tmp->next;
       }
     }
   }
+  zfs_dbgmsg(" found empty key after count=%d iterations\n", count);
+
   zc_eck empty_value;
   empty_value.zc_word[0] = 0;
   empty_value.zc_word[1] = 0;
@@ -133,22 +144,6 @@ __attribute__((unused))  void release_hash(void* prev_hash) {
   free_node(prev_hash, sizeof(zc_eck));
 }
 
-#if 0
-C_map_node_t* get_hash(C_map_t *map, const cksum_seqno *key) {
-  C_map_node_t **bucket = get_bucket(map, key);
-  if (bucket && *bucket) {
-    C_map_node_t *tmp = *bucket;
-    while (tmp) {
-      if (memcmp(tmp->key.zc_word, key->zc_word, sizeof(cksum_seqno)) == 0)
-        return tmp;
-      else {
-        tmp = tmp->next;
-      }
-    }
-  }
-  return NULL;
-}
-#endif
 
 __attribute__((unused))  void print(C_map_t *map) {
   _printf("**************************\n");
