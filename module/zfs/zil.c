@@ -693,12 +693,10 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	zil_bp_tree_init(zilog);
 
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
-	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	
 	starting_blk_cmt = get_zil_header_cmt_for_dsl(name, ccf_zil_header_commitments);
-	final_blk_cmt = get_zil_tail_cmt_for_dsl(name, ccf_zil_tail_commitments);
-	// starting_blk_cmt = get_zil_header_cmt_for_dsl(&ccf_zil_commitments);
-	// final_blk_cmt = get_zil_tail_cmt_for_dsl(&ccf_zil_commitments);
+	final_blk_cmt = &zil_tail_commitment; //get_zil_tail_cmt_for_dsl(name, ccf_zil_tail_commitments);
+	
 
 	// dump_zil_commitment2(&zil_tail_commitment);
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
@@ -743,9 +741,17 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			init(&recovery_map);
 			if (starting_blk_cmt != NULL && final_blk_cmt != NULL)
 			{
-				zc_eck first_val = get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
-				zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
+				zc_eck first_val = starting_blk_cmt->blk_digest;// get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
+				zc_eck tail_hash = final_blk_cmt->blk_digest; // get_hash(&cksum_map, &(final_blk_cmt->blk_num));
 				final_blk_cmt->blk_digest = tail_hash;
+				zfs_dbgmsg(" zil_parse: starting blk commitment (blk_num=%llu) hash: %016llx:%016llx:%016llx:%016llx\n",
+						   (u_longlong_t)starting_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
+						   (u_longlong_t)first_val.zc_word[0], (u_longlong_t)first_val.zc_word[1],
+						   (u_longlong_t)first_val.zc_word[2], (u_longlong_t)first_val.zc_word[3]);
+				zfs_dbgmsg(" zil_parse: final blk commitment (blk_num=%llu) hash: %016llx:%016llx:%016llx:%016llx\n",
+					(u_longlong_t)final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
+						   (u_longlong_t)tail_hash.zc_word[0], (u_longlong_t)tail_hash.zc_word[1],
+						   (u_longlong_t)tail_hash.zc_word[2], (u_longlong_t)tail_hash.zc_word[3]);
 				append_hash(&recovery_map, &(starting_blk_cmt->blk_num), &first_val, 0);
 
 				// @dimitra todo: compare commitments at the calculation (zio_compute.c)
@@ -1876,19 +1882,31 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 			   (u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva), (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva),
 			   (u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
 
+	#if 0
 	mutex_enter(&my_mutex);
 	zil_commitment_t *tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
 	mutex_exit(&my_mutex);
+	#endif
+	zil_commitment_t *tail_commitment = generate_zil_tail_cmt_lock_free(name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva, &(lwb->io_cksum));
 	// dump_zil_commitment2(tail_commitment);
 	zil_tail_commitment = *tail_commitment;
 	// free_node(tail_commitment, sizeof(zil_commitment_t));
 	zfs_dbgmsg(" **** tail_commitment start ****\n");
-	// dump_zil_commitment2(&zil_tail_commitment);
-	// append_cmts(ccf_zil_tail_commitments, tail_commitment);
-	// ccf_state_append(&ccf_zil_commitments, tail_commitment);
-	// ccf_state_get(&ccf_zil_commitments);
+	dump_zil_commitment2(&zil_tail_commitment);
+	zfs_dbgmsg(" name=%s\t zio=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx in txg_sync=%llu w/ zio->io_cksum=%016llx:%016llx:%016llx:%016llx\
+			lwb->io_cksum=%016llx:%016llx:%016llx:%016llx\n", name,
+			(void*)zio,
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0], (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2],
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)lwb->lwb_issued_txg,
+			(u_longlong_t)zio->io_cksum.zc_word[0], (u_longlong_t)zio->io_cksum.zc_word[1], 
+			(u_longlong_t)zio->io_cksum.zc_word[2], (u_longlong_t)zio->io_cksum.zc_word[ZIL_ZC_SEQ],
+			(u_longlong_t)lwb->io_cksum.zc_word[0], (u_longlong_t)lwb->io_cksum.zc_word[1], 
+			(u_longlong_t)lwb->io_cksum.zc_word[2], (u_longlong_t)lwb->io_cksum.zc_word[ZIL_ZC_SEQ]
+		);
+	
+	
 	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
-	// ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
 	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	zfs_dbgmsg(" **** tail_commitment end ****\n");
 
@@ -2000,6 +2018,8 @@ zil_lwb_write_done(zio_t *zio)
 
 	ASSERT3S(spa_config_held(spa, SCL_STATE, RW_READER), !=, 0);
 
+	
+
 	abd_free(zio->io_abd);
 	zio_buf_free(lwb->lwb_buf, lwb->lwb_sz);
 	lwb->lwb_buf = NULL;
@@ -2010,6 +2030,15 @@ zil_lwb_write_done(zio_t *zio)
 	lwb->lwb_child_zio = NULL;
 	lwb->lwb_write_zio = NULL;
 
+	lwb->io_cksum = zio->io_cksum;
+	zfs_dbgmsg("zio=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx in txg_sync=%llu w/ io_cksum=%016llx:%016llx:%016llx:%016llx\n",
+			(void*)zio,
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0], (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2], 
+			(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)lwb->lwb_issued_txg,
+			(u_longlong_t)zio->io_cksum.zc_word[0], (u_longlong_t)zio->io_cksum.zc_word[1], 
+			(u_longlong_t)zio->io_cksum.zc_word[2], (u_longlong_t)zio->io_cksum.zc_word[ZIL_ZC_SEQ]
+	);
 	/*
 	 * If nlwb is not yet issued, zil_lwb_set_zio_dependency() is not
 	 * called for it yet, and when it will be, it won't be able to make
@@ -2607,11 +2636,12 @@ zil_lwb_assign(zilog_t *zilog, lwb_t *lwb, itx_t *itx, list_t *ilwbs)
 	ASSERT3P(lwb->lwb_buf, !=, NULL);
 
 	zil_lwb_write_open(zilog, lwb);
+	#if 0
 	zfs_dbgmsg(" lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n",
 			   (u_longlong_t)lwb->lwb_issued_txg,
 			   (u_longlong_t)lwb->lwb_alloc_txg,
 			   (u_longlong_t)lwb->lwb_max_txg);
-
+	#endif
 	lr = &itx->itx_lr;
 	lrw = (lr_write_t *)lr;
 
@@ -2843,8 +2873,9 @@ zil_lwb_commit(zilog_t *zilog, lwb_t *lwb, itx_t *itx)
 	lwb->lwb_nfilled += reclen + dlen;
 	ASSERT3S(lwb->lwb_nfilled, <=, lwb->lwb_nused);
 	ASSERT0(P2PHASE(lwb->lwb_nfilled, sizeof(uint64_t)));
-
+	#if 0
 	zfs_dbgmsg(" lwb=%p, fill the actual transaction data into the lwb for lrc_txg=%llu and lrc_seq=%llu (following zil_lwb_assign) lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n", (void *)lwb, (u_longlong_t)lr->lrc_txg, (u_longlong_t)lr->lrc_seq, (u_longlong_t)lwb->lwb_issued_txg, (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+	#endif
 #if 0
 	if (lr->lrc_txtype == TX_WRITE) {
 		if (lrwb->lr_common.lrc_reclen != sizeof (lr_write_t)) {
@@ -3545,7 +3576,8 @@ zil_process_commit_list(zilog_t *zilog, zil_commit_waiter_t *zcw, list_t *ilwbs)
 		 */
 		if (frozen || !synced || lrc->lrc_txtype == TX_COMMIT)
 		{
-			zfs_dbgmsg(" pool is frozen=%d, we persist everything to the ZIL\n", (int)frozen);
+			if (frozen)
+				zfs_dbgmsg(" is pool frozen?(%d), if yes, we persist everything to the ZIL\n", (int)frozen);
 			if (lwb != NULL)
 			{
 				lwb = zil_lwb_assign(zilog, lwb, itx, ilwbs);
