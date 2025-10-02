@@ -2104,11 +2104,12 @@ retry:
   // todo: find the digest into cksum_map with zils_block_commitments or
   // copy_commitments2() does the job?
 
+#if 0
   ccf_zil_header_commitments =
       copy_commitments2(ccf_zil_header_commitments, zils_blocks_commitments);
 
   ccf_commit_cmts(ccf_zil_header_commitments, ZIL_HEAD_COMMITMENT);
-#if 1
+
   mutex_enter(&my_mutex);
   cleanup_global_variable(&cksum_map); // todo: remove this,
   mutex_exit(&my_mutex);

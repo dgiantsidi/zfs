@@ -477,9 +477,10 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 
 	if (not_initialized == 1) {
 		not_initialized = 0;
-		init(&cksum_map);
-		mutex_init(&my_mutex, NULL, MUTEX_DEFAULT, NULL);
+		// init(&cksum_map);
+		// mutex_init(&my_mutex, NULL, MUTEX_DEFAULT, NULL);
 		
+		#if 0
 		zils_blocks_commitments.count = 0;
 		zils_blocks_commitments.cmt_data = NULL; 
 		zils_blocks_commitments.next = NULL;
@@ -490,6 +491,7 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops __attribute__((unused)),
 		ccf_zil_tail_commitments->count = 0;
 		ccf_zil_tail_commitments->next = NULL;
 		zfs_dbgmsg(" ccf_zil_header_commitments=%p\n", (void*)(ccf_zil_header_commitments));
+		#endif
 	}
 
 
@@ -606,29 +608,32 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 	dsl_dataset_name(os->os_dsl_dataset, name);
 	zil_header_t zh = os->os_phys->os_zil_header;
 	zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
+	zio_cksum_t blk_zc_eck = zh.header_cmt;
 
+	#if 0
 	mutex_enter(&my_mutex);
 	zio_cksum_t* blk_zc_eck = get_serialized_hash(&cksum_map, &(cur_block_cksum));
 	mutex_exit(&my_mutex);
-
+	#endif
 
 	zfs_dbgmsg(" [Dataset COMMITMENT os=%p (objset_count=%llu) name=%s\tzil_header] \
 		blk_seqno=%016llx:%016llx:%016llx:%016llx txg=%llu DVA=<%llu:%llx:%llx>     \
 		zc_eck=%016llx:%016llx:%016llx:%016llx\n", (void*)os, (u_longlong_t) objset_count,\
 		name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[0], \
 		(u_longlong_t)zh.zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh.zh_log.blk_cksum.zc_word[2],\
-		(u_longlong_t)zh.zh_log.blk_cksum.zc_word[3],  (u_longlong_t)txg, \
+		(u_longlong_t)zh.zh_log.blk_cksum.zc_word[3],  \
+		(u_longlong_t)txg, \
 		(u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva), \
 		(u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), \
 		(u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva), \
-		(u_longlong_t) blk_zc_eck->zc_word[0], (u_longlong_t) blk_zc_eck->zc_word[1],\
-		(u_longlong_t) blk_zc_eck->zc_word[2], (u_longlong_t) blk_zc_eck->zc_word[3]);
+		(u_longlong_t) blk_zc_eck.zc_word[0], (u_longlong_t) blk_zc_eck.zc_word[1],\
+		(u_longlong_t) blk_zc_eck.zc_word[2], (u_longlong_t) blk_zc_eck.zc_word[3]);
 
 	(*objset_count)++;
-	zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
-	zil_header_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
-	append_cmts(&zils_blocks_commitments, zil_header_cmt);
-	release_hash(blk_zc_eck);
+	// zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+	// zil_header_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
+	// append_cmts(&zils_blocks_commitments, zil_header_cmt);
+	// release_hash(blk_zc_eck);
 	#endif
 }
 
@@ -856,12 +861,6 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	while ((ds = list_remove_head(&synced_datasets)) != NULL) {
 		objset_t *os = ds->ds_objset;
 
-		// we might update the global state with the commitments 
-		// but these will be registered to 
-		// CCF only when the uberblock is going to be persisted
-		// as such we do not update CCF for a frozen pool
-		append_objset_zil_header_cmt(ds, &objset_count, txg);
-
 		if (os->os_encrypted && !os->os_raw_receive &&
 		    !os->os_next_write_raw[txg & TXG_MASK]) {
 			ASSERT3P(ds->ds_key_mapping, !=, NULL);
@@ -870,6 +869,12 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 
 		dsl_dataset_sync_done(ds, tx);
 		dmu_buf_rele(ds->ds_dbuf, ds);
+		// we might update the global state with the commitments 
+		// but these will be registered to 
+		// CCF only when the uberblock is going to be persisted
+		// as such we do not update CCF for a frozen pool
+		
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 
 	while ((dd = txg_list_remove(&dp->dp_dirty_dirs, txg)) != NULL) {
@@ -900,12 +905,12 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 			dsl_dataset_name(os->os_dsl_dataset, name);
 			zil_header_t zh = os->os_phys->os_zil_header;
 			zfs_dbgmsg(" [MOS (pool level) COMMITMENT: name=%s\tzil_header] cksum_seq_no=%llu txg=%llu DVA=<%llu:%llx:%llx>\n", name, (u_longlong_t)zh.zh_log.blk_cksum.zc_word[ZIL_ZC_SEQ],  (u_longlong_t)txg, (u_longlong_t)DVA_GET_VDEV(zh.zh_log.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(zh.zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh.zh_log.blk_dva));
-			zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
-			dump_zil_commitment2(zil_header_cmt);
+			// zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+			// dump_zil_commitment2(zil_header_cmt);
 			// we might update the global state with the commitments but these will be registered to 
 			// CCF only when the uberblock is going to be persisted
 			// as such we do not update CCF for a frozen pool
-			append_cmts(&zils_blocks_commitments, zil_header_cmt);
+			//append_cmts(&zils_blocks_commitments, zil_header_cmt);
 		}
 	}
 

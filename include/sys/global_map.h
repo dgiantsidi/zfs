@@ -5,7 +5,7 @@
 #include <sys/zfs_context.h>
 
 
-extern C_map_t cksum_map;
+// extern C_map_t cksum_map;
 extern C_map_t recovery_map;
 
-extern kmutex_t my_mutex;
+// extern kmutex_t my_mutex;

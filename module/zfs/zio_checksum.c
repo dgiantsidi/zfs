@@ -457,7 +457,7 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 
 		zio_eck_t eck;
 		eck.zec_cksum = *zcp;
-		abd_copy_to_buf(&zilc, abd, sizeof(zil_chain_t));
+		// abd_copy_to_buf(&zilc, abd, sizeof(zil_chain_t));
 
 		zfs_dbgmsg(" blk_seqno=%016llx:%016llx:%016llx:%016llx\tzc_eck=%016llx:%016llx:%016llx:%016llx\tsize=%llu\tprevious_blk_hash=%016llx:%016llx:%016llx:%016llx", \
 			(u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[0], (u_longlong_t)zilc.zc_next_blk.blk_cksum.zc_word[1], \
@@ -471,7 +471,7 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 		previous_blk.zc_word[ZIL_ZC_SEQ]--;
 		
 
-		#if 1
+		#if 0
 		// this hash map is needed for the header
 		mutex_enter(&my_mutex);
 		append_hash(&cksum_map, &(cur_block_cksum), &(eck.zec_cksum), BP_GET_LOGICAL_BIRTH(&zilc.zc_next_blk));
