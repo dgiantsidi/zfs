@@ -15,7 +15,7 @@
 
 fifo_queue<recv_cmt_msg_t *> recv_queue; // queue to store received messages
 std::atomic<int> get_thread_done(false);
-static uint64_t c_total_ops = 10e6;
+static uint64_t c_total_ops = 100e6;
 
 static void *notify_cmts(void *arg_poolname) {
   struct sockaddr_nl src_addr, dest_addr;
@@ -55,12 +55,11 @@ static void *notify_cmts(void *arg_poolname) {
     dest_addr.nl_pid = 0;    /* For Linux Kernel */
     dest_addr.nl_groups = 0; /* unicast */
 
-    //randomized_sleeps();
+    // randomized_sleeps();
     recv_cmt_msg_t *last_cmt = recv_queue.pop();
     while ((last_cmt == nullptr)) {
       last_cmt = recv_queue.pop();
     }
-    
 
     struct nlmsghdr *nlh =
         (struct nlmsghdr *)malloc(NLMSG_SPACE(sizeof(notify_cmt_msg_t)));
@@ -90,9 +89,9 @@ static void *notify_cmts(void *arg_poolname) {
 
     uint64_t blk_id = 0;
     memcpy(&blk_id, tx_msg, sizeof(uint64_t));
-    #if 0
+#if 0
     printf("%s send to kernel: {%ld, %dB}\n", __func__, blk_id, nlh->nlmsg_len);
-    #endif
+#endif
 
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
@@ -106,12 +105,16 @@ static void *notify_cmts(void *arg_poolname) {
     last_acked_blk_id = last_blk_id;
     std::vector<recv_cmt_msg_t *> to_be_deleted =
         recv_queue.pop_until_blk_id(last_acked_blk_id);
-    #if 0
+#if 0
     printf("delete about %ld entries from the queue with last_blk_id=%ld\n",
            to_be_deleted.size(), last_acked_blk_id);
-    #endif
+#endif
     for (auto &buf : to_be_deleted) {
       free(buf); // free the messages that were popped from the queue
+    }
+    if (total_ops % 10000 == 0) {
+      printf("notify_cmts: total_ops=%lu, last_acked_blk_id=%lu\n", total_ops,
+             last_acked_blk_id);
     }
     // printf("done with deletion \n", to_be_deleted.size());
   }
@@ -166,7 +169,7 @@ static void *get_cmts(void *arg_poolname) {
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (;;) {
     if (expected_blk_id == c_total_ops) {
-      //break;
+      // break;
     }
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.nl_family = AF_NETLINK;
@@ -195,10 +198,10 @@ static void *get_cmts(void *arg_poolname) {
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
 
-    #if 0
+#if 0
     printf("%s send to kernel: {%s, %dB, pid=%d}\n", __func__, poolname,
            nlh->nlmsg_len, nlh->nlmsg_pid);
-    #endif
+#endif
     free(tx_msg);
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
@@ -220,10 +223,14 @@ static void *get_cmts(void *arg_poolname) {
     recv_cmt_msg_t *recv_msg =
         deserialize_recv_cmt(reinterpret_cast<char *>(NLMSG_DATA(nlh)));
 
-    #if 0
+#if 0
     printf("received from kernel: {blk_id=%ld, %s, cmt=%s}\n", recv_msg->blk_id,
            recv_msg->poolname, recv_msg->tail_commitment);
-    #endif
+#endif
+    if (expected_blk_id % 10000 == 0) {
+      printf("get_cmts: total_ops=%lu, last_blk_id=%lu\n", expected_blk_id,
+             recv_msg->blk_id);
+    }
     recv_queue.push(recv_msg); // push the received message to the queue
 
     free(nlh);
