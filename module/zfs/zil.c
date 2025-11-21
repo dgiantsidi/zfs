@@ -642,8 +642,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 
   zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
 
-  starting_blk_cmt = &zil_header_commitment; // get_zil_header_cmt_for_dsl(name,
-                                             // ccf_zil_header_commitments);
+  starting_blk_cmt = & zil_header_commitment; //get_zil_header_cmt_for_dsl(name, ccf_zil_header_commitments);
   final_blk_cmt = &zil_tail_commitment; // get_zil_tail_cmt_for_dsl(name,
                                         // ccf_zil_tail_commitments);
 
@@ -4010,11 +4009,11 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx) {
                (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
                (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2],
                (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
-               (u_longlong_t)lwb->io_cksum.zc_word[0],
-               (u_longlong_t)lwb->io_cksum.zc_word[1],
-               (u_longlong_t)lwb->io_cksum.zc_word[2],
-               (u_longlong_t)lwb->io_cksum.zc_word[3], (u_longlong_t)txg,
-               (lwb->lwb_state != LWB_STATE_FLUSH_DONE),
+               (u_longlong_t) lwb->io_cksum.zc_word[0],
+               (u_longlong_t) lwb->io_cksum.zc_word[1],
+               (u_longlong_t) lwb->io_cksum.zc_word[2],
+               (u_longlong_t) lwb->io_cksum.zc_word[3],
+               (u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE),
                (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,
                (u_longlong_t)lwb->lwb_issued_txg);
 
