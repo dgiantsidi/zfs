@@ -1953,7 +1953,7 @@ else {
 	to_be_inserted->cmt = tail_commitment_copy;
 	list_insert_head(&pending_commitments, to_be_inserted);
 
-#if 0
+#if 1
 	zfs_dbgmsg(" notify ccf-thread block id=%llu which will read from %p\n", \
 		(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
 	 	(void*)consumer_list_handle);

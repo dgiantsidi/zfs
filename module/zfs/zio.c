@@ -4339,12 +4339,12 @@ zio_alloc_zil(spa_t *spa, objset_t *os, uint64_t txg, blkptr_t *new_bp,
 		    spa_version(spa) >= SPA_VERSION_SLIM_ZIL
 		    ? ZIO_CHECKSUM_ZILOG2 : ZIO_CHECKSUM_ZILOG);
 		if (spa_version(spa) < SPA_VERSION_SLIM_ZIL) {
-			zfs_dbgmsg("%s with spa_version(spa)=%ld and SPA_VERSION_SLIM_ZIL=%lld: using old ZIL checksum %lld ZIO_CHECKSUM_ZILOG\n",
-		    			    spa_name(spa), spa_version(spa),  SPA_VERSION_SLIM_ZIL, BP_GET_CHECKSUM(new_bp));
+			zfs_dbgmsg("%s with spa_version(spa)=%llu and SPA_VERSION_SLIM_ZIL=%llu: using old ZIL checksum %lld ZIO_CHECKSUM_ZILOG\n",
+		    			    spa_name(spa), (u_longlong_t)spa_version(spa),  SPA_VERSION_SLIM_ZIL, BP_GET_CHECKSUM(new_bp));
 		}
 		else {
-			zfs_dbgmsg("%s with spa_version(spa)=%ld and SPA_VERSION_SLIM_ZIL=%lld: using new ZIL checksum %lld ZIO_CHECKSUM_ZILOG2\n",
-			    spa_name(spa), spa_version(spa), SPA_VERSION_SLIM_ZIL, BP_GET_CHECKSUM(new_bp));
+			zfs_dbgmsg("%s with spa_version(spa)=%llu and SPA_VERSION_SLIM_ZIL=%llu: using new ZIL checksum %lld ZIO_CHECKSUM_ZILOG2\n",
+			    spa_name(spa), (u_longlong_t)spa_version(spa), SPA_VERSION_SLIM_ZIL, BP_GET_CHECKSUM(new_bp));
 		}
 		BP_SET_TYPE(new_bp, DMU_OT_INTENT_LOG);
 		BP_SET_LEVEL(new_bp, 0);

@@ -791,7 +791,6 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 			eck_offset = offsetof(zil_chain_t, zc_eck);
 		} else {
 			ASSERT3U(size, >=, sizeof (zio_eck_t));
-			ASSERT(B_FALSE);
 			eck_offset = size - sizeof (zio_eck_t);
 			abd_copy_to_buf_off(&eck, abd, eck_offset,
 			    sizeof (zio_eck_t));

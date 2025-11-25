@@ -385,9 +385,9 @@ static void notify_cmts_callback(struct sk_buff *skb)
 	// struct sk_buff *skb_out;
 
 	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
-	int pid = nlh->nlmsg_pid; /* pid of sending process */
+	[[__maybe_unused__]] int pid = nlh->nlmsg_pid; /* pid of sending process */
 	char *msg = (char *)nlmsg_data(nlh);
-	int msg_size = nlh->nlmsg_len - NLMSG_HDRLEN;
+	[[__maybe_unused__]] int msg_size = nlh->nlmsg_len - NLMSG_HDRLEN;
 
 	uint64_t acknowledged_blk_id = 0;
 	memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
@@ -407,7 +407,7 @@ static void notify_cmts_callback(struct sk_buff *skb)
 
 		if (latest_cmt_node == NULL)
 		{
-			printk(KERN_INFO "############# consumer_list_handle is empty after waking up %d thread(s) with acknowledged_blk_id=%lld #############\n",
+			printk(KERN_INFO "notify_cmts_callback: consumer_list_handle is empty after waking up %d thread(s) with acknowledged_blk_id=%lld #############\n",
 				   waiters_no, acknowledged_blk_id);
 			break;
 		}
@@ -416,9 +416,9 @@ static void notify_cmts_callback(struct sk_buff *skb)
 		if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] <= acknowledged_blk_id)
 		{
 			ccf_waiter_t *zcw_ccf_waiter = NULL;
-#if 0
-		printk(KERN_INFO "cmt_id=%lld, acknowledged_blk_id=%lld #############\n",\
-			latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], acknowledged_blk_id);
+#if 1
+			printk(KERN_INFO "notify_cmts_callback: cmt_id=%lld, acknowledged_blk_id=%lld #############\n",\
+				latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], acknowledged_blk_id);
 #endif
 			while ((zcw_ccf_waiter = list_remove_tail(&(latest_cmt->waiters))) != NULL)
 			{
@@ -463,7 +463,6 @@ static void get_cmts_callback(struct sk_buff *skb)
 	int pid = nlh->nlmsg_pid; /* pid of sending process */
 	char *msg = (char *)nlmsg_data(nlh);
 	int msg_size = nlh->nlmsg_len;
-	// printk(KERN_INFO "get_cmts_callback: 1\n");
 	char *to_be_copied = NULL;
 
 	get_cmt_msg_t *get_cmt = decode_get_cmt_msg(msg, sizeof(get_cmt_msg_t));
@@ -478,8 +477,14 @@ static void get_cmts_callback(struct sk_buff *skb)
 
 	for (;;)
 	{
+		
+	if (mutex_owner(&ccf_lock) == current) {
+    	// Current thread owns the lock
+		printk(KERN_INFO "get_cmts_callback: ERROR: I already hold this lock\n");
+	}
+
 		mutex_enter(&ccf_lock);
-		// printk(KERN_INFO "get_cmts_callback: 3\n");
+		// printk(KERN_INFO "get_cmts_callback: I got the ccf_lock\n");
 		if (consumer_list_handle == NULL || list_is_empty(consumer_list_handle))
 		{
 			// printk(KERN_INFO "get_cmts_callback: consumer_list_handle == NULL || list_is_empty(consumer_list_handle)\n");
@@ -495,39 +500,53 @@ static void get_cmts_callback(struct sk_buff *skb)
 				{
 					if (iterations % 100000 == 0)
 					{
-						printk(KERN_INFO "get_cmts_callback: timeout waiting for pool %s, iteration no=%d\n",
+						printk(KERN_INFO "get_cmts_callback: -- timeout waiting for pool %s, iteration no=%d\n",
 							   get_cmt->poolname, iterations);
 					}
+					ASSERT((&pending_commitments) != NULL);
 					consumer_list_handle = &pending_commitments;
+					ASSERT(consumer_list_handle != NULL);
 					if (!list_is_empty(consumer_list_handle))
 						break;
 				}
 				iterations--;
 				if (iterations <= 0)
 				{
-					printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
+					printk(KERN_INFO "get_cmts_callback (release lock): graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
 					mutex_exit(&ccf_lock);
 					return;
 				}
 			}
 		}
-		// printk(KERN_INFO "get_cmts_callback: after 3\n");
-
-		if (!list_is_empty(consumer_list_handle))
+		// printk(KERN_INFO "get_cmts_callback: watchpoint #1\n");
+		ASSERT(consumer_list_handle != NULL);
+		latest_cmt_node = list_head(consumer_list_handle);
+		if (!list_is_empty(consumer_list_handle) && latest_cmt_node != NULL)
 		{
+			// printk(KERN_INFO "get_cmts_callback: watchpoint #1.1\n");
 			latest_cmt_node = list_head(consumer_list_handle);
+			// printk(KERN_INFO "get_cmts_callback: watchpoint #1.2\n");
+			if (latest_cmt_node == NULL) {
+				printk(KERN_INFO "get_cmts_callback: ERROR: latest_cmt_node is NULL\n");
+			}
+			if (latest_cmt_node->cmt == NULL) {
+				printk(KERN_INFO "get_cmts_callback: ERROR: latest_cmt_node->cmt is NULL\n");
+			}
 			latest_cmt = latest_cmt_node->cmt;
+			// printk(KERN_INFO "get_cmts_callback: watchpoint #1.3\n");
 			if (prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] == -1)
 			{
 				to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
 												  latest_cmt->blk_digest);
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-				printk(KERN_INFO "get_cmts_callback: this only happens once ..\n");
+				
 				mutex_exit(&ccf_lock);
+				printk(KERN_INFO "get_cmts_callback (release lock): this only happens once ..\n");
 				break;
 			}
 			else
 			{
+				// printk(KERN_INFO "get_cmts_callback: watchpoint #1.4\n");
 				while (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] == prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
 				{
 					// printk(KERN_INFO "get_cmts_callback: latest_cmt equals prev_tail_cmt ..\n");
@@ -542,15 +561,15 @@ static void get_cmts_callback(struct sk_buff *skb)
 						{
 							if (iterations % 100000 == 0)
 							{
-								printk(KERN_INFO "get_cmts_callback: timeout.. waiting for pool %s, iteration no=%d\n",
+								printk(KERN_INFO "get_cmts_callback: watchpoint #2: timeout.. waiting for pool %s, iteration no=%d\n",
 									   get_cmt->poolname, iterations);
 							}
 						}
 						iterations--;
 						if (iterations <= 0)
 						{
-							printk(KERN_INFO "get_cmts_callback: graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
 							mutex_exit(&ccf_lock);
+							printk(KERN_INFO "get_cmts_callback (release ccf_lock): graceful SHUTDOWN for pool %s \n", get_cmt->poolname);
 							return;
 						}
 						latest_cmt_node = list_head(consumer_list_handle);
@@ -561,23 +580,32 @@ static void get_cmts_callback(struct sk_buff *skb)
 						printk(KERN_INFO "get_cmts_callback: timeout: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 							(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 #endif
-							if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ])
+							if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ]) {
+								printk(KERN_INFO "get_cmts_callback: rc=%d, got new cmt to send: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
+									rc, (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 								break;
+							}
 						}
 						else
 						{
-							// printk(KERN_INFO "get_cmts_callback: latest_cmt_node is NULL, exiting ..\n");
+							//printk(KERN_INFO "get_cmts_callback: latest_cmt_node is NULL, exiting ..\n");
+							rc = -1;
 						}
 					}
+					// printk(KERN_INFO "get_cmts_callback: watchpoint #2.1 rc=%d\n", rc);
+					
 					break;
 				}
-				// printk(KERN_INFO "get_cmts_callback: 4\n");
+				// printk(KERN_INFO "get_cmts_callback: watchpoint #3\n");
 				latest_cmt_node = list_head(consumer_list_handle);
+				if (latest_cmt_node == NULL) {
+					printk(KERN_INFO "get_cmts_callback: ERROR: latest_cmt_node is NULL after waking up\n");
+				}
 				latest_cmt = latest_cmt_node->cmt;
 				to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
 												  latest_cmt->blk_digest);
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
-				printk(KERN_INFO "get_cmts_callback: to send zil_blk_id=%llu\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+				printk(KERN_INFO "get_cmts_callback (release ccf_lock): to send zil_blk_id=%llu\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 				mutex_exit(&ccf_lock);
 			}
 
@@ -586,7 +614,8 @@ static void get_cmts_callback(struct sk_buff *skb)
 	}
 #if 0
   printk(KERN_INFO "get_cmts_callback: 6\n");
-  printk(KERN_INFO "get_cmts_callback: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
+
+  printk(KERN_INFO "get_cmts_callback: ---- latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu\n", \
 	(u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
 #endif
 
@@ -610,17 +639,17 @@ static void get_cmts_callback(struct sk_buff *skb)
 	nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
 	NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
 
-	// printk(KERN_INFO "get_cmts_callback: 8\n");
+	//printk(KERN_INFO "get_cmts_callback: watchpoint #4\n");
 
 	memcpy(nlmsg_data(nlh), to_be_copied, get_size_of_recv_cmt());
 	kfree(to_be_copied);
 	kfree(get_cmt);
-	// printk(KERN_INFO "get_cmts_callback: 9\n");
+	//printk(KERN_INFO "get_cmts_callback: watchpoint #5\n");
 
 	int res = nlmsg_unicast(nl_sock_get_cmts, skb_out, pid);
 	if (res < 0)
 		printk(KERN_INFO "get_cmts_callback: error while sending skb to pid=%d\n", pid);
-	// printk(KERN_INFO "get_cmts_callback: 10\n");
+	//printk(KERN_INFO "get_cmts_callback: watchpoint #6\n");
 }
 
 #if 0 // this is the old callback function, which is not used anymore
