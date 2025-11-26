@@ -25,5 +25,6 @@ typedef struct recv_cmt_msg {
   uint64_t blk_id; // block id
   char poolname[ZFS_MAX_DATASET_NAME_LEN];
   char tail_commitment[COMMITMENT_SIZE];
+  uint64_t timestamp_ns;
   // todo: extend w/ uberblock and zil header commitments
 } recv_cmt_msg_t;

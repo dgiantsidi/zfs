@@ -12,12 +12,25 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+#include <thread>
+#include <condition_variable>
+#include <mutex>
 
 fifo_queue<recv_cmt_msg_t *> recv_queue; // queue to store received messages
 std::atomic<int> get_thread_done(false);
 static uint64_t c_total_ops = 100e6;
+std::condition_variable ccf_thread_cv;
+std::mutex ccf_thread_mutex;
+
+static inline uint64_t get_current_time_ns() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
 
 static void *notify_cmts(void *arg_poolname) {
+  static uint64_t sum_latency_ns = 0;
+  static uint64_t count_latency = 0;
   struct sockaddr_nl src_addr, dest_addr;
   static uint64_t last_acked_blk_id = 0;
   struct msghdr msg;
@@ -58,9 +71,13 @@ static void *notify_cmts(void *arg_poolname) {
     // randomized_sleeps();
     recv_cmt_msg_t *last_cmt = recv_queue.pop();
     while ((last_cmt == nullptr)) {
+      std::unique_lock<std::mutex> lock(ccf_thread_mutex);
+      ccf_thread_cv.wait(lock);
       last_cmt = recv_queue.pop();
     }
 
+    sum_latency_ns += get_current_time_ns() - last_cmt->timestamp_ns;
+    count_latency++;
     struct nlmsghdr *nlh =
         (struct nlmsghdr *)malloc(NLMSG_SPACE(sizeof(notify_cmt_msg_t)));
 
@@ -113,8 +130,9 @@ static void *notify_cmts(void *arg_poolname) {
       free(buf); // free the messages that were popped from the queue
     }
     if (total_ops % 10000 == 0) {
-      printf("notify_cmts: total_ops=%lu, last_acked_blk_id=%lu\n", total_ops,
-             last_acked_blk_id);
+      auto avg_latency_us = (sum_latency_ns * 1.0 / count_latency*1.0) / 1e3;
+      printf("notify_cmts: total_ops=%lu, last_acked_blk_id=%lu avg_latency=%f us\n", total_ops,
+             last_acked_blk_id, avg_latency_us);
     }
     // printf("done with deletion \n", to_be_deleted.size());
   }
@@ -222,6 +240,7 @@ static void *get_cmts(void *arg_poolname) {
 
     recv_cmt_msg_t *recv_msg =
         deserialize_recv_cmt(reinterpret_cast<char *>(NLMSG_DATA(nlh)));
+    recv_msg->timestamp_ns = get_current_time_ns();
 
 #if 0
     printf("received from kernel: {blk_id=%ld, %s, cmt=%s}\n", recv_msg->blk_id,
@@ -232,6 +251,7 @@ static void *get_cmts(void *arg_poolname) {
              recv_msg->blk_id);
     }
     recv_queue.push(recv_msg); // push the received message to the queue
+    ccf_thread_cv.notify_one(); // wake up notify_cmts thread
 
     free(nlh);
     expected_blk_id++;
