@@ -12,7 +12,6 @@ list_t* consumer_list_handle; // for the tail
 zil_commitment_t* starting_blk_cmt;
 zil_commitment_t* final_blk_cmt;
 
-ccf_state_t ccf_zil_commitments;
 
 kcondvar_t	zil_thread_cv;		    /* signalled when "done" */
 kcondvar_t	ccf_thread_cv;		/* signalled when "done" */

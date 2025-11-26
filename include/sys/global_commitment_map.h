@@ -24,10 +24,4 @@ extern int not_initialized;
 
 extern zil_commitment_t zil_tail_commitment;
 extern list_t pending_commitments; // for the tail
-//extern list_t pending_commitments_2; // for the tail
 extern list_t* consumer_list_handle; // for the tail
-
-
-
-
-extern ccf_state_t ccf_zil_commitments;

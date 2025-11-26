@@ -126,6 +126,9 @@ typedef struct lwb {
 	list_t		lwb_waiters;	/* list of zil_commit_waiter's */
 	avl_tree_t	lwb_vdev_tree;	/* vdevs to flush after lwb write */
 	kmutex_t	lwb_vdev_lock;	/* protects lwb_vdev_tree */
+
+	/* checksum represented by this lwb (ZIL only)*/
+	zio_cksum_t	io_cksum;
 } lwb_t;
 
 /*

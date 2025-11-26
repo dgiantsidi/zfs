@@ -72,23 +72,8 @@ __attribute__((unused)) extern void cleanup_ccf_cmts(dyn_array_commitments_t* pr
 __attribute__((unused)) dyn_array_commitments_t* copy_commitments2(dyn_array_commitments_t* dst, dyn_array_commitments_t src);
 __attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
 __attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(const char* name, dyn_array_commitments_t* ccf_zil_header_commitments);
+__attribute__((unused)) zil_commitment_t * generate_zil_tail_cmt_lock_free(const char *name, uint64_t txg,
+                                const zio_cksum_t blk_cksum,
+                                dva_t *allocated_bp, zio_cksum_t *blk_zc_eck);
 
-
-
-// 2nd idea
-struct ccf_state {
-	char name[ZFS_MAX_DATASET_NAME_LEN]; 
-	list_t zil_blk_commitments;
-};
-
-typedef struct ccf_state ccf_state_t;
-
-__attribute__((unused)) extern void ccf_state_init(ccf_state_t* ccf_zil_commitments);
-__attribute__((unused)) extern void ccf_state_append(ccf_state_t* ccf_zil_commitments, zil_commitment_t* zil_cmt);
-__attribute__((unused)) extern void ccf_state_cleanup(ccf_state_t* ccf_zil_commitments);
-__attribute__((unused)) extern void ccf_state_get(ccf_state_t* ccf_zil_commitments);
-__attribute__((unused)) extern void ccf_state_cmp(ccf_state_t* ccf_zil_commitments, uint64_t* calulated_digest);
-
-//__attribute__((unused)) zil_commitment_t*  get_zil_header_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
-//__attribute__((unused)) zil_commitment_t* get_zil_tail_cmt_for_dsl(ccf_state_t* ccf_zil_commitments);
 

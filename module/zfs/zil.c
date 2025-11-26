@@ -50,7 +50,7 @@
 #include <sys/global_map.h>
 #include <sys/commitments.h>
 #include <sys/global_commitment_map.h>
-
+#include <sys/arena_alloc.h>
 /*
  * The ZFS Intent Log (ZIL) saves "transaction records" (itxs) of system
  * calls that change the file system. Each itx has enough information to
@@ -1838,16 +1838,22 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		(u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva), \
 		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
 #endif
-
+#if 0
 	mutex_enter(&my_mutex);
 	zil_commitment_t *tail_commitment = generate_zil_tail_cmt(name, lwb->lwb_issued_txg,
 															  lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
 	zil_commitment_t *tail_commitment_copy = generate_zil_tail_cmt(name, lwb->lwb_issued_txg,
 																   lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva);
 	mutex_exit(&my_mutex);
+#endif 
 
-	// dump_zil_commitment2(tail_commitment);
-	// zil_tail_commitment = *tail_commitment;
+	zil_commitment_t *tail_commitment = generate_zil_tail_cmt_lock_free(
+      name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva,
+      &(lwb->io_cksum));
+
+	zil_commitment_t *tail_commitment_copy = generate_zil_tail_cmt_lock_free(
+      name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva,
+      &(lwb->io_cksum));
 
 	/*
 	 * (0) take lock for commitment
@@ -1858,12 +1864,13 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	 */
 	mutex_enter(&ccf_lock);
 	zil_tail_commitment = *tail_commitment;
+	free_node(tail_commitment, sizeof(zil_commitment_t));
 	list_create(&(tail_commitment_copy->waiters), sizeof(ccf_waiter_t), offsetof(ccf_waiter_t, zcw_ccf_node));
 	list_create(&(zil_tail_commitment.waiters), sizeof(ccf_waiter_t), offsetof(ccf_waiter_t, zcw_ccf_node));
 
 	zfs_dbgmsg(" **** tail_commitment start **** block id=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ]);
-	ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
-	ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+	//ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
+	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	uint64_t start_time = gethrtime();
 	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu start_time=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)start_time);
 
@@ -2048,6 +2055,18 @@ zil_lwb_write_done(zio_t *zio)
 	lwb->lwb_child_zio = NULL;
 	lwb->lwb_write_zio = NULL;
 
+	 lwb->io_cksum = zio->io_cksum;
+  zfs_dbgmsg("zio=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx in "
+             "txg_sync=%llu w/ io_cksum=%016llx:%016llx:%016llx:%016llx\n",
+             (void *)zio, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0],
+             (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
+             (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2],
+             (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+             (u_longlong_t)lwb->lwb_issued_txg,
+             (u_longlong_t)zio->io_cksum.zc_word[0],
+             (u_longlong_t)zio->io_cksum.zc_word[1],
+             (u_longlong_t)zio->io_cksum.zc_word[2],
+             (u_longlong_t)zio->io_cksum.zc_word[ZIL_ZC_SEQ]);
 	/*
 	 * If nlwb is not yet issued, zil_lwb_set_zio_dependency() is not
 	 * called for it yet, and when it will be, it won't be able to make
@@ -2539,11 +2558,12 @@ next_lwb:
 		zio_nowait(lwb->lwb_child_zio);
 	zio_nowait(lwb->lwb_write_zio);
 	zio_nowait(lwb->lwb_root_zio);
-	zfs_dbgmsg(" finalize the previously closed block and\
-		issue the write zio w/ lwb_issued_txg=%llu, lwb_alloc_txg=%llu, \
-		lwb_max_txg=%llu\n",
-			   (u_longlong_t)lwb->lwb_issued_txg,
-			   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+
+	// zfs_dbgmsg(" finalize the previously closed block and\
+	//	issue the write zio w/ lwb_issued_txg=%llu, lwb_alloc_txg=%llu, \
+	//	lwb_max_txg=%llu\n",
+	//		   (u_longlong_t)lwb->lwb_issued_txg,
+	//		   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
 
 	/*
 	 * If nlwb was ready when we gave it the block pointer,
@@ -2645,10 +2665,11 @@ zil_lwb_assign(zilog_t *zilog, lwb_t *lwb, itx_t *itx, list_t *ilwbs)
 	ASSERT3P(lwb->lwb_buf, !=, NULL);
 
 	zil_lwb_write_open(zilog, lwb);
-	zfs_dbgmsg(" lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n",
-			   (u_longlong_t)lwb->lwb_issued_txg,
-			   (u_longlong_t)lwb->lwb_alloc_txg,
-			   (u_longlong_t)lwb->lwb_max_txg);
+
+	// zfs_dbgmsg(" lwb->lwb_issued_txg=%llu, lwb->lwb_alloc_txg=%llu, lwb->lwb_max_txg=%llu\n",
+	//		   (u_longlong_t)lwb->lwb_issued_txg,
+	//		   (u_longlong_t)lwb->lwb_alloc_txg,
+	//		   (u_longlong_t)lwb->lwb_max_txg);
 
 	lr = &itx->itx_lr;
 	lrw = (lr_write_t *)lr;
@@ -3583,7 +3604,7 @@ zil_process_commit_list(zilog_t *zilog, zil_commit_waiter_t *zcw, list_t *ilwbs)
 		 */
 		if (frozen || !synced || lrc->lrc_txtype == TX_COMMIT)
 		{
-			zfs_dbgmsg(" pool is frozen=%d, we persist everything to the ZIL\n", (int)frozen);
+			// zfs_dbgmsg(" pool is frozen=%d, we persist everything to the ZIL\n", (int)frozen);
 			if (lwb != NULL)
 			{
 				lwb = zil_lwb_assign(zilog, lwb, itx, ilwbs);
@@ -4057,6 +4078,8 @@ zil_alloc_commit_waiter(void)
 static void
 zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 {
+	static uint64_t sum_latency = 0;
+	static uint64_t count_ccf_blocks = 0;
 	/*
 		zfs_dbgmsg(" [Before blocking] zcw->block_id  %llu is safe to ccf = %s",\
 			(u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id, \
@@ -4096,9 +4119,13 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", (u_longlong_t) latency);
 		}
 		else {
-			zfs_dbgmsg(" [Finalization] valid zcw->block_id=%d is safe to ccf = %s latency=%llu us",
+			sum_latency += latency;
+			count_ccf_blocks++;
+			uint64_t avg_latency_us = sum_latency / count_ccf_blocks;
+			zfs_dbgmsg(" [Finalization] valid zcw->block_id=%d is safe to ccf = %s latency=%llu us (avg_latency=%llu us over %llu waiters)",
 					(int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
-					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", (u_longlong_t) latency);
+					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", 
+					(u_longlong_t) latency, avg_latency_us, (u_longlong_t)count_ccf_blocks);
 		}
 		ASSERT3B(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);
 	}
@@ -4450,17 +4477,22 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 	while ((lwb = list_head(&zilog->zl_lwb_list)) != NULL)
 	{
 		zh->zh_log = lwb->lwb_blk;
-		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx (%llu)\
+		zh->header_cmt = lwb->io_cksum;
+		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx\
+      lwb->io_cksum=%016llx:%016llx:%016llx:%016llx \
 			 in txg=%llu w/ (lwb->lwb_state != LWB_STATE_FLUSH_DONE) = %d, lwb->lwb_alloc_txg=%llu,\
 			  lwb->lwb_max_txg=%llu, lwb->lwb_issued_txg=%llu\n",
-				   (void *)zilog, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0],
-				   (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
-				   (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2],
-				   (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
-				   (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
-				   (u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE),
-				   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,
-				   (u_longlong_t)lwb->lwb_issued_txg);
+               (void *)zilog, (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[0],
+               (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[1],
+               (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[2],
+               (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+               (u_longlong_t) lwb->io_cksum.zc_word[0],
+               (u_longlong_t) lwb->io_cksum.zc_word[1],
+               (u_longlong_t) lwb->io_cksum.zc_word[2],
+               (u_longlong_t) lwb->io_cksum.zc_word[3],
+               (u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE),
+               (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,
+               (u_longlong_t)lwb->lwb_issued_txg);
 
 		if (lwb->lwb_state != LWB_STATE_FLUSH_DONE ||
 			lwb->lwb_alloc_txg > txg || lwb->lwb_max_txg > txg)
