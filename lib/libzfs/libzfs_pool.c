@@ -1674,7 +1674,6 @@ static void* get_commitments(void* poolname_v) {
 		free(my_msg);
 		free(nlh);
 #ifdef CCF_MOCKED_DELAY
-#warning "CCF_MOCKED_DELAY is defined, so the thread will sleep for 1 ms after each sendmsg()"
 		usleep(1*ccf_mocked_delay_us);
 #endif 
 	}

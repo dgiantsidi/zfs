@@ -413,8 +413,8 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 		// keeps the latest blk_hash and the latest blk to compute the next hash
 		// we rely on the fact that the zil blocks are processed in order in a single thread context
 		// todo: we should probably keep a hash map here because we might have multiple ZILs
-		static zio_cksum_t previous_blk_hash = {0,0,0,0};
-		static zio_cksum_t previous_blk = {0,0,0,0};
+		static zio_cksum_t previous_blk_hash = {{0,0,0,0}};
+		static zio_cksum_t previous_blk = {{0,0,0,0}};
 		/*
 		// @dimitra: this is the previous idea where we get the previous hash from the map
 		mutex_enter(&my_mutex);
