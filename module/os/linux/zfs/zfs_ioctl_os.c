@@ -437,8 +437,13 @@ static void notify_cmts_callback(struct sk_buff *skb)
 		{
 			// nothing to process so far
 			if (waiters_no > 0)
-				printk(KERN_INFO "notify_cmts_callback: returning after waking up %d thread(s) with acknowledged_blk_id=%lld (pid=%d, current pid=%d) #############\n",
-				   	waiters_no, acknowledged_blk_id,  pid, current->pid);
+				printk(KERN_INFO "notify_cmts_callback: returning after waking up %d thread(s) with acknowledged_blk_id=%lld (pid=%d, current pid=%d, latest_blk=%lld in the queue) #############\n",
+				   	waiters_no, acknowledged_blk_id,  pid, current->pid, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+			else {
+				if (latest_cmt != NULL)
+				printk(KERN_INFO "notify_cmts_callback: returning after waking up %d thread(s) with acknowledged_blk_id=%lld (pid=%d, current pid=%d, latest_blk=%lld in the queue) #############\n",
+				   	waiters_no, acknowledged_blk_id,  pid, current->pid, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+			}
 			break;
 		}
 	}

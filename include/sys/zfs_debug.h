@@ -83,7 +83,8 @@ extern void __dprintf(boolean_t dprint, const char *file, const char *func,
  */
 #define	zfs_dbgmsg(...) \
 	if (zfs_dbgmsg_enable) \
-		__dprintf(B_FALSE, __FILE__, __func__, __LINE__, __VA_ARGS__)
+		((void)0)
+		//__dprintf(B_FALSE, __FILE__, __func__, __LINE__, __VA_ARGS__)
 
 #ifdef ZFS_DEBUG
 /*
@@ -93,7 +94,8 @@ extern void __dprintf(boolean_t dprint, const char *file, const char *func,
  */
 #define	dprintf(...) \
 	if (zfs_flags & ZFS_DEBUG_DPRINTF) \
-		__dprintf(B_TRUE, __FILE__, __func__, __LINE__, __VA_ARGS__)
+		((void)0)
+		// __dprintf(B_TRUE, __FILE__, __func__, __LINE__, __VA_ARGS__)
 #else
 #define	dprintf(...) ((void)0)
 #endif /* ZFS_DEBUG */

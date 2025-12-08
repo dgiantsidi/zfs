@@ -1965,6 +1965,7 @@ else {
 		(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
 	 	(void*)consumer_list_handle);
 #endif
+	
 	cv_broadcast(&ccf_thread_cv);
 	mutex_exit(&ccf_lock);
 

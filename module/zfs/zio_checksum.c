@@ -177,10 +177,8 @@ static __attribute__((unused)) void compute_path_compute_sha256_hash_chain(void*
 	abd_t *abd, size_t size, const void *ctx_template, zio_cksum_t *zcp) {
 	// check if it is empty; there is no previous block
 	if (is_empty(previous_blk_hash) > 0) {
-		zfs_dbgmsg(" First block, there is no previous blk for blk_seqno=%llu\tsize=%llu\n", \
+		zfs_dbgmsg(" no previous blk for blk_seqno=%llu\tsize=%llu\n", \
 			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
-		// this is the original
-		// abd_checksum_sha512_native(abd, size, ctx_template, zcp);
 		abd_checksum_sha256(abd, size, ctx_template, zcp);
 	}
 	else {
@@ -190,14 +188,14 @@ static __attribute__((unused)) void compute_path_compute_sha256_hash_chain(void*
 		void* blk_content = alloc_node(size);
 		abd_copy_to_buf(blk_content, abd, size);
 		
-		// Todo: double-check those
-		//abd_copy_to_buf(blk_content, abd, size);
+		
 		memcpy(acc_data, blk_content, size);
 		memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
 		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
 		abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
-		// abd_checksum_sha512_native(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
-		abd_checksum_sha256(acc_hash, size, ctx_template, zcp);
+		
+		// abd_checksum_sha256(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
+
 		free_node(acc_data, size + sizeof(zc_eck));
 		free_node(blk_content, size);
 		abd_free(acc_hash);
@@ -501,7 +499,7 @@ abd_fletcher_4_native_zilog(abd_t *abd, uint64_t size,
 		return;
 	}
 	else {
-		zfs_dbgmsg(" [COMPUTE path]\n");
+		zfs_dbgmsg(" [COMPUTE path fletcher]\n");
 	#if 0
 		// we are on the compute path	
 		void* previous_blk_hash = get_serialized_hash(&cksum_map, &(prev_block_cksum));

@@ -71,8 +71,8 @@ static void *notify_cmts(void *arg_poolname) {
     // randomized_sleeps();
     recv_cmt_msg_t *last_cmt = recv_queue.pop();
     while ((last_cmt == nullptr)) {
-      std::unique_lock<std::mutex> lock(ccf_thread_mutex);
-      ccf_thread_cv.wait(lock);
+      //std::unique_lock<std::mutex> lock(ccf_thread_mutex);
+      //ccf_thread_cv.wait(lock);
       last_cmt = recv_queue.pop();
     }
 
@@ -131,7 +131,7 @@ static void *notify_cmts(void *arg_poolname) {
     }
     if (total_ops % 10000 == 0) {
       auto avg_latency_us = (sum_latency_ns * 1.0 / count_latency*1.0) / 1e3;
-      printf("notify_cmts: total_ops=%lu, last_acked_blk_id=%lu avg_latency=%f us\n", total_ops,
+      printf("notify_cmts: total_ops=%lu, last_acked_blk_id=%lu avg_latency=%.2f us\n", total_ops,
              last_acked_blk_id, avg_latency_us);
     }
     // printf("done with deletion \n", to_be_deleted.size());
@@ -251,7 +251,7 @@ static void *get_cmts(void *arg_poolname) {
              recv_msg->blk_id);
     }
     recv_queue.push(recv_msg); // push the received message to the queue
-    ccf_thread_cv.notify_one(); // wake up notify_cmts thread
+    //ccf_thread_cv.notify_one(); // wake up notify_cmts thread
 
     free(nlh);
     expected_blk_id++;
