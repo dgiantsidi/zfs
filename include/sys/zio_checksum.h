@@ -44,6 +44,8 @@ struct abd;
  */
 typedef void zio_checksum_t(struct abd *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp);
+typedef void zio_hash_chain_t(struct abd *abd, uint64_t size,
+    const void *ctx_template, zio_cksum_t *zcp, void* prev_hash, size_t hash_size);
 typedef void *zio_checksum_tmpl_init_t(const zio_cksum_salt_t *salt);
 typedef void zio_checksum_tmpl_free_t(void *ctx_template);
 
@@ -110,6 +112,7 @@ _SYS_ZIO_CHECKSUM_H zio_checksum_info_t
 
 /* SHA2 */
 extern zio_checksum_t abd_checksum_sha256;
+extern zio_hash_chain_t abd_checksum_sha256_hash_chain;
 extern zio_checksum_t abd_checksum_sha512_native;
 extern zio_checksum_t abd_checksum_sha512_byteswap;
 

@@ -1740,9 +1740,7 @@ static void zil_lwb_flush_vdevs_done(zio_t *zio) {
   zil_commitment_t *tail_commitment = generate_zil_tail_cmt_lock_free(
       name, lwb->lwb_issued_txg, lwb->lwb_blk.blk_cksum, lwb->lwb_blk.blk_dva,
       &(lwb->io_cksum));
-  // dump_zil_commitment2(tail_commitment);
   zil_tail_commitment = *tail_commitment;
-  // free_node(tail_commitment, sizeof(zil_commitment_t));
   zfs_dbgmsg(" **** tail_commitment start ****\n");
   dump_zil_commitment2(&zil_tail_commitment);
   zfs_dbgmsg(
@@ -1761,9 +1759,7 @@ static void zil_lwb_flush_vdevs_done(zio_t *zio) {
       (u_longlong_t)lwb->io_cksum.zc_word[2],
       (u_longlong_t)lwb->io_cksum.zc_word[ZIL_ZC_SEQ]);
 
-  // ccf_zil_commitments_protocol(ccf_zil_header_commitments,
-  //                             ccf_zil_tail_commitments, tail_commitment);
-  // ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
+
   zfs_dbgmsg(" **** tail_commitment end ****\n");
 
   while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)
@@ -1809,6 +1805,8 @@ static void zil_lwb_flush_vdevs_done(zio_t *zio) {
   if (zilog->zl_lwb_inflight[txg & TXG_MASK] == 0)
     cv_broadcast(&zilog->zl_lwb_io_cv);
   mutex_exit(&zilog->zl_lwb_io_lock);
+
+  free_node(tail_commitment, sizeof(zil_commitment_t));
 }
 
 /*

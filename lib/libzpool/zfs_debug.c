@@ -39,7 +39,8 @@ static kmutex_t zfs_dbgmsgs_lock;
 static uint_t zfs_dbgmsg_size = 0;
 static uint_t zfs_dbgmsg_maxsize = 4<<20; /* 4MB */
 
-int zfs_dbgmsg_enable = B_TRUE;
+int zfs_dbgmsg_enable = B_FALSE;
+
 
 static void
 zfs_dbgmsg_purge(uint_t max_size)

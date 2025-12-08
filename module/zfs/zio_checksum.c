@@ -33,13 +33,15 @@
 #include <sys/zil.h>
 #include <sys/abd.h>
 #include <zfs_fletcher.h>
-
+#include <sys/blake3.h>
 #include <sys/global_map.h>
 #include <sys/global_commitment_map.h>
 
 static void
 abd_fletcher_4_impl(abd_t *abd, uint64_t size, zio_abd_checksum_data_t *acdp);
-
+static void
+abd_fletcher_4_impl_hash_chain(abd_t *abd, uint64_t size, zio_abd_checksum_data_t *acdp, void* previous_blk_hash,
+	size_t hash_size);
 
 __attribute__((unused)) static int is_empty(const void* buf) {
 	zc_eck empty_value;
@@ -186,24 +188,59 @@ static __attribute__((unused)) void compute_path_compute_sha256_hash_chain(void*
 		abd_checksum_sha256(abd, size, ctx_template, zcp);
 	}
 	else {
-		zfs_dbgmsg(" There is previous blk for blk_seqno=%llu\tsize=%llu\n", \
+		zfs_dbgmsg(" blk_seqno=%llu\tsize=%llu\n", \
 			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
-		void* acc_data = alloc_node(size + sizeof(zc_eck));
-		void* blk_content = alloc_node(size);
-		abd_copy_to_buf(blk_content, abd, size);
-		
-		// Todo: double-check those
+		//zio_cksum_t zcp2;
+		//void* acc_data = alloc_node(size + sizeof(zc_eck));
+		//void* blk_content = alloc_node(size);
 		//abd_copy_to_buf(blk_content, abd, size);
-		memcpy(acc_data, blk_content, size);
-		memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
-		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
-		abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
-		//abd_checksum_sha512_native(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
-		abd_checksum_sha256(abd, size, ctx_template, zcp);
 		
-		free_node(acc_data, size + sizeof(zc_eck));
-		free_node(blk_content, size);
-		abd_free(acc_hash);
+
+		//memcpy(acc_data, blk_content, size);
+		//memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
+		//abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
+		//abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
+		
+		//abd_checksum_sha512_native(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
+		//abd_checksum_sha256(abd, size, ctx_template, zcp);
+		
+		//abd_checksum_sha256(acc_hash, size + sizeof(zc_eck), ctx_template, &zcp2);
+		abd_checksum_sha256_hash_chain(abd, size, ctx_template, zcp, previous_blk_hash, sizeof(zc_eck));
+		#if 0
+		void *templ;
+		BLAKE3_CTX ctx;
+		zio_cksum_salt_t salt;
+		//const zfs_impl_t *blake3 = zfs_impl_get_ops("blake3");
+		//blake3->setname("generic")
+		templ = abd_checksum_blake3_tmpl_init(&salt);
+		abd_checksum_blake3_native(acc_hash, size + sizeof(zc_eck), templ, zcp);
+		abd_checksum_blake3_tmpl_free(templ);
+		#endif
+		#if 0
+		(void) ctx_template;
+		fletcher_4_ctx_t ctx;
+
+		zio_abd_checksum_data_t acd = {
+		.acd_byteorder	= ZIO_CHECKSUM_NATIVE,
+		.acd_zcp 	= zcp,
+		.acd_ctx	= &ctx
+		};
+		//abd_fletcher_4_impl(acc_hash, size + sizeof(zc_eck), &acd);
+		// abd_fletcher_4_impl(abd, size, &acd);
+		abd_fletcher_4_impl_hash_chain(abd, size, &acd, previous_blk_hash, sizeof(zc_eck));
+		#endif
+		#if 0
+		if (zcp->zc_word[0] != zcp2.zc_word[0] ||
+		    zcp->zc_word[1] != zcp2.zc_word[1] ||
+		    zcp->zc_word[2] != zcp2.zc_word[2] ||
+		    zcp->zc_word[3] != zcp2.zc_word[3]) {
+			zfs_dbgmsg(" MISMATCH blk_seqno=%llu\tsize=%llu\n", \
+				(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
+		}
+		#endif
+		//free_node(acc_data, size + sizeof(zc_eck));
+		//free_node(blk_content, size);
+		//abd_free(acc_hash);
 	}
 }
 
@@ -385,6 +422,16 @@ abd_fletcher_4_impl(abd_t *abd, uint64_t size, zio_abd_checksum_data_t *acdp)
 {
 	fletcher_4_abd_ops.acf_init(acdp);
 	abd_iterate_func(abd, 0, size, fletcher_4_abd_ops.acf_iter, acdp);
+	fletcher_4_abd_ops.acf_fini(acdp);
+}
+
+static inline void
+abd_fletcher_4_impl_hash_chain(abd_t *abd, uint64_t size, zio_abd_checksum_data_t *acdp, void* previous_blk_hash,
+	size_t hash_size)
+{
+	fletcher_4_abd_ops.acf_init(acdp);
+	abd_iterate_func(abd, 0, size, fletcher_4_abd_ops.acf_iter, acdp);
+	fletcher_4_abd_ops.acf_iter(previous_blk_hash, hash_size, acdp);
 	fletcher_4_abd_ops.acf_fini(acdp);
 }
 
@@ -596,7 +643,7 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	{{abd_checksum_sha256,		abd_checksum_sha256},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
-	{{abd_checksum_sha256_zilog,	abd_fletcher_4_byteswap},
+	{{abd_checksum_sha256_zilog,	abd_checksum_sha256_zilog},
 	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{abd_checksum_off,		abd_checksum_off},
 	    NULL, NULL, 0, "noparity"},
