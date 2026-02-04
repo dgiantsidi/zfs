@@ -2167,9 +2167,10 @@ retry:
 	zfs_dbgmsg("Hash digest of the new uberblock %s", ub_digest->digest);
 
 	/*
-	 * TODO: submit commitment updates to the ledger
+	 * TODO: submit commitment updates to the ledger (mocked since had no performance impact)
 	 */
-
+	hrtime_t ms_delay = 10; // 10ms (extremely huge)
+	zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
 	/*
 	 * Sync the uberblocks to all vdevs in svd[].
 	 * If the system dies in the middle of this step, there are two cases
@@ -2198,6 +2199,7 @@ retry:
 	 */
 	// @dimitra: FIXME!
 	// hrtime_t ms_delay = 10;
+	// zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
 	// ...  for the tail commitment we only need the previous one, not the txg all
   	// tail commitments ..
 
