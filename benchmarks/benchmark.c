@@ -6,11 +6,11 @@
 #include <string.h>
 #include <sys/time.h>
 
-#define NUM_THREADS 64
+#define MAX_THREADS 128
 #define WRITE_SIZE 4096
 #define NUM_WRITES 200000
 
-double thread_times[NUM_THREADS];
+double thread_times[MAX_THREADS];
 
 void* write_worker(void* arg) {
     int thread_id = *(int*)arg;
@@ -47,19 +47,31 @@ void* write_worker(void* arg) {
     pthread_exit(NULL);
 }
 
-int main() {
-    pthread_t threads[NUM_THREADS];
-    int thread_ids[NUM_THREADS];
+int main(int argc, char* argv[]) {
+    int num_threads = MAX_THREADS;
+    
+    if (argc > 1) {
+        num_threads = atoi(argv[1]);
+        if (num_threads <= 0 || num_threads > MAX_THREADS) {
+            fprintf(stderr, "Invalid number of threads: %s (must be 1-%d)\n", argv[1], MAX_THREADS);
+            return 1;
+        }
+    }
+    
+    printf("Running benchmark with %d threads\n", num_threads);
+    
+    pthread_t threads[MAX_THREADS];
+    int thread_ids[MAX_THREADS];
 
     struct timeval total_start, total_end;
     gettimeofday(&total_start, NULL);
 
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    for (int i = 0; i < num_threads; ++i) {
         thread_ids[i] = i;
         pthread_create(&threads[i], NULL, write_worker, &thread_ids[i]);
     }
 
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    for (int i = 0; i < num_threads; ++i) {
         pthread_join(threads[i], NULL);
     }
 
@@ -70,13 +82,13 @@ int main() {
     printf("\nBenchmark Results:\n");
     double sum = 0.0;
     double avg_latency = 0.0;
-    for (int i = 0; i < NUM_THREADS; ++i) {
+    for (int i = 0; i < num_threads; ++i) {
         double latency = 1000.0*(thread_times[i]*1.0 / (1.0 * NUM_WRITES)); // make it ms
         printf("Thread %d: %.4f seconds, latency=%.4f ms\n", i, thread_times[i], latency);
         sum += thread_times[i];
         avg_latency += latency;
     }
-    printf("Total time across all threads: %.4f seconds, avg_latency= %.4f ms\n", sum, avg_latency / (1.0 * NUM_THREADS));
+    printf("Total time across all threads: %.4f seconds, avg_latency= %.4f ms\n", sum, avg_latency / (1.0 * num_threads));
     printf("Wall-clock time: %.4f seconds\n", total_elapsed);
 
     return 0;
