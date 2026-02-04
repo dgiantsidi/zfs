@@ -194,7 +194,7 @@ static __attribute__((unused)) void compute_path_compute_sha256_hash_chain(void*
 		abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
 		abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
 		
-		// abd_checksum_sha256(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
+		abd_checksum_sha256(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
 
 		free_node(acc_data, size + sizeof(zc_eck));
 		free_node(blk_content, size);
@@ -569,7 +569,7 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	{{abd_checksum_sha256,		abd_checksum_sha256},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
-	{{abd_checksum_sha256_zilog,	abd_fletcher_4_byteswap},
+	{{abd_checksum_sha256_zilog,	abd_checksum_sha256_zilog},
 	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{abd_checksum_off,		abd_checksum_off},
 	    NULL, NULL, 0, "noparity"},
