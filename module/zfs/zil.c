@@ -2560,12 +2560,13 @@ next_lwb:
 	zio_nowait(lwb->lwb_write_zio);
 	zio_nowait(lwb->lwb_root_zio);
 
-	// zfs_dbgmsg(" finalize the previously closed block and\
-	//	issue the write zio w/ lwb_issued_txg=%llu, lwb_alloc_txg=%llu, \
-	//	lwb_max_txg=%llu\n",
-	//		   (u_longlong_t)lwb->lwb_issued_txg,
-	//		   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
-
+	/*
+	zfs_dbgmsg(" finalize the previously closed block and\
+		issue the write zio w/ lwb_issued_txg=%llu, lwb_alloc_txg=%llu, \
+		lwb_max_txg=%llu\n",
+			   (u_longlong_t)lwb->lwb_issued_txg,
+			   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg);
+	*/
 	/*
 	 * If nlwb was ready when we gave it the block pointer,
 	 * it is on us to issue it and possibly following ones.
@@ -4126,7 +4127,7 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 			zfs_dbgmsg(" [Finalization] valid zcw->block_id=%d is safe to ccf = %s latency=%llu us (avg_latency=%llu us over %llu waiters)",
 					(int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
 					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", 
-					(u_longlong_t) latency, avg_latency_us, (u_longlong_t)count_ccf_blocks);
+					(u_longlong_t) latency, (u_longlong_t) avg_latency_us, (u_longlong_t)count_ccf_blocks);
 		}
 		ASSERT3B(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);
 	}
