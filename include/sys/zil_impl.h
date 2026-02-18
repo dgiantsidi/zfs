@@ -129,6 +129,7 @@ typedef struct lwb {
 
 	/* checksum represented by this lwb (ZIL only)*/
 	zio_cksum_t	io_cksum;
+	zio_cksum_t	prev_io_cksum;
 } lwb_t;
 
 /*

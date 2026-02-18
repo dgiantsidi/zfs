@@ -607,10 +607,10 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 	char name[100];
 	dsl_dataset_name(os->os_dsl_dataset, name);
 	zil_header_t zh = os->os_phys->os_zil_header;
-	zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
+	// zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
 
 	// mutex_enter(&my_mutex);
-	zio_cksum_t* blk_zc_eck = get_serialized_hash(&cksum_map, &(cur_block_cksum));
+	zio_cksum_t* blk_zc_eck = &(zh.prev_header_cmt);// get_serialized_hash(&cksum_map, &(cur_block_cksum));
 	// mutex_exit(&my_mutex);
 
 	zfs_dbgmsg(" [Dataset COMMITMENT os=%p (objset_count=%llu) name=%s\tzil_header] \
@@ -626,10 +626,15 @@ static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, c
 		(u_longlong_t) blk_zc_eck->zc_word[2], (u_longlong_t) blk_zc_eck->zc_word[3]);
 
 	(*objset_count)++;
-	zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
-	zil_header_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
-	append_cmts(&zils_blocks_commitments, zil_header_cmt);
-	release_hash(blk_zc_eck);
+	starting_blk_cmt = (starting_blk_cmt == NULL) ? dump_zil_commitment(&zh, name, txg) : starting_blk_cmt;
+	zil_head_cmt = (zil_head_cmt == NULL) ? dump_zil_commitment(&zh, name, txg) :zil_head_cmt; // just initialization; updates happen in vdev_label.c
+	starting_blk_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
+	starting_blk_cmt->txg_sync = txg;
+	starting_blk_cmt->blk_num = zh.zh_log.blk_cksum;
+	//zil_commitment_t* zil_header_cmt = dump_zil_commitment(&zh, name, txg);
+	// zil_header_cmt->blk_digest = *blk_zc_eck; // append the digest to the commitment
+	// append_cmts(&zils_blocks_commitments, zil_header_cmt);
+	//release_hash(blk_zc_eck);
 	#endif
 }
 

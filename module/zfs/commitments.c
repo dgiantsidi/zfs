@@ -231,6 +231,11 @@ __attribute__((unused)) void append_cmts(dyn_array_commitments_t* zils_header_co
 }
 
 __attribute__((unused))  zil_commitment_t* generate_zil_tail_cmt(const char* name, uint64_t txg, const zio_cksum_t blk_cksum, dva_t* allocated_bp) {
+  (void) name;
+  (void) txg;
+  (void) blk_cksum;
+  (void) allocated_bp;
+  
   ASSERT(0);
 #if 0
   zil_commitment_t* gen_commitment = alloc_node(sizeof(zil_commitment_t));

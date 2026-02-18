@@ -489,6 +489,7 @@ struct zio {
 
 	/* checksum represented by this I/O (ZIL only)*/
   	zio_cksum_t io_cksum;
+	zio_cksum_t prev_io_cksum;
 
 	/* Stuff for the vdev stack */
 	vdev_t		*io_vd;

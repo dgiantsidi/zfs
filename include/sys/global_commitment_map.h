@@ -17,6 +17,8 @@ extern dyn_array_commitments_t* ccf_zil_tail_commitments;
 
 
 extern zil_commitment_t* starting_blk_cmt;
+extern zil_commitment_t* zil_head_cmt;
+
 extern zil_commitment_t* final_blk_cmt;
 
 

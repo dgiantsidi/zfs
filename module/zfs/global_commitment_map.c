@@ -9,7 +9,8 @@ zil_commitment_t zil_tail_commitment;
 list_t pending_commitments; // for the tail
 list_t* consumer_list_handle; // for the tail
 
-zil_commitment_t* starting_blk_cmt;
+zil_commitment_t* starting_blk_cmt = NULL;
+zil_commitment_t* zil_head_cmt = NULL;
 zil_commitment_t* final_blk_cmt;
 
 

@@ -223,7 +223,9 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 		   zfs_dbgmsg( " ERROR, zil headers do not match!\n");
 	   }
 	   zc_eck first_val =  get_hash(&recovery_map, &(starting_blk_cmt->blk_num));
-	   abd_checksum_sha512_native(abd, size, ctx_template, zcp);
+	   // abd_checksum_sha512_native(abd, size, ctx_template, zcp);
+   	   abd_checksum_sha256(abd, size, ctx_template, zcp);
+
 
 	   // todo: maybe we also keep the previous blk digest as part of the zil header commitment to calculate the first one?
 	   zcp->zc_word[0] = first_val.zc_word[0];
@@ -237,19 +239,22 @@ static __attribute__((unused)) void verify_path_compute_sha256_hash_chain(void* 
 			blk for blk_seqno=%llu\tsize=%llu\n", \
 			(u_longlong_t)zilc->zc_eck.zec_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t) size);
 
-	   void* acc_data = alloc_node(size + sizeof(zc_eck));
-	   void* blk_content = alloc_node(size);
+
+ 	   abd_checksum_sha256_hash_chain(abd, size, ctx_template, zcp, previous_blk_hash, sizeof(zc_eck));
+
+	   // void* acc_data = alloc_node(size + sizeof(zc_eck));
+	   //void* blk_content = alloc_node(size);
    
 	   // Todo: check those
-	   abd_copy_to_buf(blk_content, abd, size);
-	   memcpy(acc_data, blk_content, size);
-	   memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
-	   abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
-	   abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
-	   abd_checksum_sha512_native(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
-	   free_node(acc_data, size + sizeof(zc_eck));
-	   free_node(blk_content, size);
-	   abd_free(acc_hash);
+	   //abd_copy_to_buf(blk_content, abd, size);
+	   //memcpy(acc_data, blk_content, size);
+	   //memcpy(acc_data+size, previous_blk_hash, sizeof(zc_eck));
+	   //abd_t* acc_hash = abd_alloc(size + sizeof(zc_eck), B_TRUE);
+	   //abd_copy_from_buf_off(acc_hash, acc_data,  0, size + sizeof(zc_eck));
+	   //abd_checksum_sha512_native(acc_hash, size + sizeof(zc_eck), ctx_template, zcp);
+	   //free_node(acc_data, size + sizeof(zc_eck));
+	   //free_node(blk_content, size);
+	   //abd_free(acc_hash);
 
 	   // todo: check that the tail is also ok
 	   if (memcmp(final_blk_cmt->blk_num.zc_word, zilc->zc_eck.zec_cksum.zc_word, sizeof(zio_cksum_t)) == 0) {
@@ -415,8 +420,8 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 		// keeps the latest blk_hash and the latest blk to compute the next hash
 		// we rely on the fact that the zil blocks are processed in order in a single thread context
 		// todo: we should probably keep a hash map here because we might have multiple ZILs
-		static zio_cksum_t previous_blk_hash = {0,0,0,0};
-		static zio_cksum_t previous_blk = {0,0,0,0};
+		static zio_cksum_t previous_blk_hash = {{0,0,0,0}};
+		static zio_cksum_t previous_blk = {{0,0,0,0}};
 		/*
 		// @dimitra: this is the previous idea where we get the previous hash from the map
 		mutex_enter(&my_mutex);
