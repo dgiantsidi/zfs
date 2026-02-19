@@ -693,7 +693,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- start]\n");
 	// starting_blk_cmt = get_zil_header_cmt_for_dsl(name, ccf_zil_header_commitments);
-	final_blk_cmt = &zil_tail_commitment;
+	//final_blk_cmt = &zil_tail_commitment;
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
 
@@ -725,9 +725,16 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			zc_eck first_val = zil_head_cmt->blk_digest; //get_hash(&cksum_map, &(starting_blk_cmt->blk_num));
 			//zc_eck tail_hash = get_hash(&cksum_map, &(final_blk_cmt->blk_num));
 			//final_blk_cmt->blk_digest = tail_hash;
+			
+			zil_head_cmt->blk_num.zc_word[0] = blk.blk_cksum.zc_word[0];
+			zil_head_cmt->blk_num.zc_word[1] = blk.blk_cksum.zc_word[1];
+			zil_head_cmt->blk_num.zc_word[2] = blk.blk_cksum.zc_word[2];
+
+			final_blk_cmt->blk_num.zc_word[0] = blk.blk_cksum.zc_word[0];
+			final_blk_cmt->blk_num.zc_word[1] = blk.blk_cksum.zc_word[1];
+			final_blk_cmt->blk_num.zc_word[2] = blk.blk_cksum.zc_word[2];
 			zio_cksum_t prev_block_cksum = zil_head_cmt->blk_num;
 			prev_block_cksum.zc_word[ZIL_ZC_SEQ]--;
-
 			append_hash(&recovery_map, &(prev_block_cksum), &first_val, 0);
 
 			// @dimitra todo: compare commitments at the calculation (zio_compute.c)
@@ -742,12 +749,12 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 					zfs_dbgmsg(" error, zil headers *not* match ..\n\
 						blk.blk_cksum.zc_word=%016llx:%016llx:%016llx:%016llx,\
 						zil_head_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx\n",
-							   (u_longlong_t)blk.blk_cksum.zc_word[0], (u_longlong_t)blk.blk_cksum.zc_word[1],
-							   (u_longlong_t)blk.blk_cksum.zc_word[2], (u_longlong_t)blk.blk_cksum.zc_word[3],
-							   (u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
-							   (u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
-							   (u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
-							   (u_longlong_t)zil_head_cmt->blk_num.zc_word[3]);
+						(u_longlong_t)blk.blk_cksum.zc_word[0], (u_longlong_t)blk.blk_cksum.zc_word[1],
+						(u_longlong_t)blk.blk_cksum.zc_word[2], (u_longlong_t)blk.blk_cksum.zc_word[3],
+						(u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
+						(u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
+						(u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
+						(u_longlong_t)zil_head_cmt->blk_num.zc_word[3]);
 					// todo: @dimitra, abort here
 					zfs_dbgmsg(" [Error] System should abort!\n");
 				}
@@ -773,13 +780,17 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			{
 				if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t)) == 0)
 				{
-					zfs_dbgmsg(" this is the tail, error should be 0 (error=%d) ..\n", error);
+					zfs_dbgmsg(" this block (blk_seqno=%llu) is the tail, error should be 0 (error=%d) ..\n", 
+						(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+						error);
 				}
 				else if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t) - sizeof(blk.blk_cksum.zc_word[ZIL_ZC_SEQ])) == 0)
 				{
 					if (blk.blk_cksum.zc_word[ZIL_ZC_SEQ] > final_blk_cmt->blk_num.zc_word[ZIL_ZC_SEQ])
 					{
-						zfs_dbgmsg(" this block is past tail error should be > 0 (error=%d) ..\n", error);
+						zfs_dbgmsg(" this block (blk_seqno=%llu) is past tail error should be > 0 (error=%d) ..\n", 
+							(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
+							error);
 						if (error <= 0)
 						{
 							zfs_dbgmsg(" [Error] System should abort!\n");
@@ -857,8 +868,8 @@ done:
 	zilog->zl_parse_lr_count = lr_count;
 
 	zil_bp_tree_fini(zilog);
-	starting_blk_cmt = NULL;
-	final_blk_cmt = NULL;
+	//starting_blk_cmt = NULL;
+	//final_blk_cmt = NULL;
 	return (error);
 }
 
@@ -1543,7 +1554,7 @@ int zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	 * but we can read the entire log later, we will not try to replay
 	 * or destroy beyond the last block we successfully claimed.
 	 */
-	zfs_dbgmsg(" remount=%d\n", remount);
+	zfs_dbgmsg("zil_claim(): remount=%d\n", remount);
 	ASSERT3U(zh->zh_claim_txg, <=, first_txg);
 	if (zh->zh_claim_txg == 0 && !BP_IS_HOLE(&zh->zh_log))
 	{
@@ -1563,7 +1574,7 @@ int zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	ASSERT3U(first_txg, ==, (spa_last_synced_txg(zilog->zl_spa) + 1));
 	dmu_objset_disown(os, B_FALSE, FTAG);
 	remount = 0;
-	cleanup_global_variable(&recovery_map);
+	//cleanup_global_variable(&recovery_map);
 	return (0);
 }
 
@@ -1574,6 +1585,8 @@ int zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
  */
 int zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 {
+	zfs_dbgmsg(" zil_check_log_chain: ds=%llu\n",
+			   (unsigned long long)ds->ds_object);
 	(void)dp;
 	zilog_t *zilog;
 	objset_t *os;
@@ -1581,7 +1594,7 @@ int zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	int error;
 
 	ASSERT(tx == NULL);
-	remount = 1;
+	remount = (remount=0) ? 1 : 2;
 	error = dmu_objset_from_ds(ds, &os);
 	if (error != 0)
 	{
@@ -1636,7 +1649,7 @@ int zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	 */
 	error = zil_parse(zilog, zil_claim_log_block, zil_claim_log_record, tx,
 					  zilog->zl_header->zh_claim_txg ? -1ULL : spa_min_claim_txg(os->os_spa), B_FALSE);
-
+	remount = 2;
 	return ((error == ECKSUM || error == ENOENT) ? 0 : error);
 }
 

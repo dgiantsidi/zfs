@@ -95,6 +95,7 @@
 #include <sys/zfeature.h>
 #include <sys/dsl_destroy.h>
 #include <sys/zvol.h>
+#include <sys/global_commitment_map.h>
 
 #ifdef	_KERNEL
 #include <sys/fm/protocol.h>
@@ -4115,6 +4116,67 @@ spa_ld_select_uberblock_done(spa_t *spa, uberblock_t *ub)
 	spa->spa_prev_software_version = ub->ub_software_version;
 }
 
+
+static int extract_commitment(char* commitment, zil_commitment_t* head_cmt, zil_commitment_t* tail_cmt) {
+	char *colon = NULL;
+	char* tmp = commitment;
+	unsigned long long  v;
+	char* end;
+	int err;
+	char buffer[SHA256_DIGEST_LENGTH * HEX_PER_UINT8];
+	for (int i = 0; i < 3; i++) {
+		colon = strchr(tmp, ':');
+		if (colon == NULL) {
+			zfs_dbgmsg("Error: colon not found in input string");
+			return SET_ERROR(EINVAL);
+		}
+		
+		memcpy(buffer, tmp, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
+		err = ddi_strtoull(buffer, &end, 16, &v);
+		if (err != 0)
+			return SET_ERROR(EINVAL);   // invalid or out of range
+
+		head_cmt->blk_digest.zc_word[i] = (uint64_t)v;
+		zfs_dbgmsg("Extracted value for zil_head_cmt digest word %d: %016llx\n", i, (u_longlong_t)head_cmt->blk_digest.zc_word[i]);
+		tmp = colon + 1;
+	}
+	memcpy(buffer, tmp, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
+	err = ddi_strtoull(buffer, &end, 16, &v);
+	if (err != 0)
+		return SET_ERROR(EINVAL);   // invalid or out of range
+
+	head_cmt->blk_digest.zc_word[3] = (uint64_t)v;
+	zfs_dbgmsg("Extracted value for zil_head_cmt digest word %d: %016llx\n", 3, (u_longlong_t)head_cmt->blk_digest.zc_word[3]);
+	colon = strchr(tmp, ':');
+	tmp = colon + 1;
+	for (int i = 0; i < 3; i++) {
+		colon = strchr(tmp, ':');
+		if (colon == NULL) {
+			zfs_dbgmsg("Error: colon not found in input string");
+			return SET_ERROR(EINVAL);
+		}
+		
+		memcpy(buffer, tmp, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
+		err = ddi_strtoull(buffer, &end, 16, &v);
+		if (err != 0)
+			return SET_ERROR(EINVAL);   // invalid or out of range
+
+		tail_cmt->blk_digest.zc_word[i] = (uint64_t)v;
+		zfs_dbgmsg("Extracted value for zil_tail_cmt digest word %d: %016llx\n", i, (u_longlong_t)tail_cmt->blk_digest.zc_word[i]);
+		tmp = colon + 1;
+	}
+	memcpy(buffer, tmp, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
+	err = ddi_strtoull(buffer, &end, 16, &v);
+	if (err != 0)
+		return SET_ERROR(EINVAL);   // invalid or out of range
+
+	tail_cmt->blk_digest.zc_word[3] = (uint64_t)v;
+	zfs_dbgmsg("Extracted value for zil_tail_cmt digest word %d: %016llx\n", 3, (u_longlong_t)tail_cmt->blk_digest.zc_word[3]);
+
+	return 0;
+}
+
+
 static int
 spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 {
@@ -4132,6 +4194,8 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 	uberblock_digest_t *prev_ub_digest = NULL;
 	// hash digest of new uberblock commitment
 	uberblock_digest_t *new_ub_digest = NULL;
+
+	const char *zil_commitments_nvpair = NULL;
 
 	nvpair_t *elem = NULL;
 	const char *nm;
@@ -4178,9 +4242,12 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 	 */
 
 	selected_ub_hex = kmem_alloc(sizeof(*selected_ub_hex), KM_SLEEP);
-        selected_ub_digest = kmem_alloc(sizeof(*selected_ub_digest), KM_SLEEP);
+    selected_ub_digest = kmem_alloc(sizeof(*selected_ub_digest), KM_SLEEP);
 	prev_ub_digest = kmem_alloc(sizeof(*prev_ub_digest), KM_SLEEP);
 	new_ub_digest = kmem_alloc(sizeof(*new_ub_digest), KM_SLEEP);
+
+	zil_head_cmt = kmem_alloc(sizeof(zil_commitment_t), KM_SLEEP);
+	final_blk_cmt = kmem_alloc(sizeof(zil_commitment_t), KM_SLEEP);
 
 	// load commitment
 	while ((elem = nvlist_next_nvpair(spa->spa_config, elem)) != NULL) {
@@ -4207,6 +4274,64 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 				strncpy(new_ub_digest->digest, colon + 1, SHA256_DIGEST_LENGTH * HEX_PER_UINT8);
 				new_ub_digest->digest[64] = '\0';
 
+			}
+			break;
+		}
+		else if (strcmp(nm, ZPOOL_CONFIG_ZIL_COMMITMENTS) == 0) {
+			// nvpair handles the memory lifecycle
+			(void) nvpair_value_string(elem, &zil_commitments_nvpair);
+			// copy commitment hex
+			if (zil_commitments_nvpair != NULL) {
+				// locate the colon
+				const char *first_colon = strchr(zil_commitments_nvpair, ':');
+				if (first_colon == NULL) {
+					zfs_dbgmsg("Error: colon not found in input string");
+					return SET_ERROR(EINVAL);
+				}
+				size_t left_len = first_colon - zil_commitments_nvpair;
+				if (left_len > 10) {
+					left_len = 10;
+				}
+				char* second_colon = strchr(first_colon + 1, ':');
+				size_t right_len = second_colon - (first_colon + 1);
+				if (right_len > 10) {
+					right_len = 10;
+				}
+				char number_str_1[11]; 
+				char number_str_2[11]; 
+				memcpy(number_str_1, zil_commitments_nvpair, left_len);
+				number_str_1[left_len] = '\0';
+				memcpy(number_str_2, first_colon + 1, right_len);
+				number_str_2[right_len] = '\0';
+
+				unsigned long long  v;
+				char* end;
+				int err = ddi_strtoull(number_str_1, &end, 10, &v);
+				if (err != 0)
+    				return SET_ERROR(EINVAL);   // invalid or out of range
+
+				zil_head_cmt->blk_num.zc_word[3] = (uint64_t)v;
+				err = ddi_strtoull(number_str_2, &end, 10, &v);
+				if (err != 0)
+    				return SET_ERROR(EINVAL);   // invalid or out of range
+				 final_blk_cmt->blk_num.zc_word[3] = (uint64_t)v;
+				zfs_dbgmsg("final_blk_cmt->blk_num: %llu", (u_longlong_t) final_blk_cmt->blk_num.zc_word[3]);
+
+				
+				
+				extract_commitment(second_colon+1, zil_head_cmt, final_blk_cmt);
+				zfs_dbgmsg("zil_head_cmt->blk_num: %llu and zil_head_cmt digest: %016llx:%016llx:%016llx:%016llx", 
+					(u_longlong_t)zil_head_cmt->blk_num.zc_word[3],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[0],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[1],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[2],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[3]);
+				zfs_dbgmsg("final_blk_cmt->blk_num: %llu and final_blk_cmt digest: %016llx:%016llx:%016llx:%016llx", 
+					(u_longlong_t)final_blk_cmt->blk_num.zc_word[3],
+					(u_longlong_t)final_blk_cmt->blk_digest.zc_word[0],
+					(u_longlong_t)final_blk_cmt->blk_digest.zc_word[1],
+					(u_longlong_t)final_blk_cmt->blk_digest.zc_word[2],
+					(u_longlong_t)final_blk_cmt->blk_digest.zc_word[3]);
 			}
 			break;
 		}
@@ -6864,7 +6989,12 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	if (policy.zlp_ub_commitment != NULL) {
 		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_UB_COMMITMENT, policy.zlp_ub_commitment);
 	}
-
+	zfs_dbgmsg("spa_import: importing %s\n", pool);
+	if (policy.zlp_zil_commitments != NULL) {
+		zfs_dbgmsg("spa_import: importing %s with zil_commitments: %s", pool, policy.zlp_zil_commitments);
+		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_ZIL_COMMITMENTS, policy.zlp_zil_commitments);
+	}
+	zfs_dbgmsg("spa_import: imported %s\n", pool);
 	if (state != SPA_LOAD_RECOVER) {
 		spa->spa_last_ubsync_txg = spa->spa_load_txg = 0;
 		zfs_dbgmsg("spa_import: importing %s", pool);
@@ -7047,6 +7177,12 @@ spa_tryimport(nvlist_t *tryconfig)
 	if (policy.zlp_ub_commitment != NULL) {
 		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_UB_COMMITMENT, policy.zlp_ub_commitment);
 	}
+	zfs_dbgmsg("spa_import: importing %s\n", poolname);
+	if (policy.zlp_zil_commitments != NULL) {
+		zfs_dbgmsg("spa_import: importing %s with zil_commitments: %s", poolname, policy.zlp_zil_commitments);
+		fnvlist_add_string(spa->spa_config, ZPOOL_CONFIG_ZIL_COMMITMENTS, policy.zlp_zil_commitments);
+	}
+	zfs_dbgmsg("spa_import: imported %s\n", poolname);
 
 	error = spa_load(spa, SPA_LOAD_TRYIMPORT, SPA_IMPORT_EXISTING);
 

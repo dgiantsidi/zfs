@@ -2135,18 +2135,23 @@ retry:
 
 
 	uberblock_dump(ub);
-	zil_head_cmt->blk_num = starting_blk_cmt->blk_num;
-	zil_head_cmt->blk_digest = starting_blk_cmt->blk_digest;
+	if (zil_head_cmt != NULL && starting_blk_cmt != NULL) {
+		zil_head_cmt->blk_num = starting_blk_cmt->blk_num;
+		zil_head_cmt->blk_digest = starting_blk_cmt->blk_digest;
 
-	zfs_dbgmsg("zil_head_cmt:\n	zil_head_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx, zil_head_cmt->blk_digest.zc_word=%016llx:%016llx:%016llx:%016llx\n",			   
-				(u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
-				(u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
-				(u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
-				(u_longlong_t)zil_head_cmt->blk_num.zc_word[3],
-				(u_longlong_t)zil_head_cmt->blk_digest.zc_word[0],
-				(u_longlong_t)zil_head_cmt->blk_digest.zc_word[1],
-				(u_longlong_t)zil_head_cmt->blk_digest.zc_word[2],
-				(u_longlong_t)zil_head_cmt->blk_digest.zc_word[3]);
+		zfs_dbgmsg("zil_head_cmt:\n	zil_head_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx, zil_head_cmt->blk_digest.zc_word=%016llx:%016llx:%016llx:%016llx\n",			   
+					(u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
+					(u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
+					(u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
+					(u_longlong_t)zil_head_cmt->blk_num.zc_word[3],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[0],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[1],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[2],
+					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[3]);
+	}
+	else {
+		zfs_dbgmsg("zil_head_cmt or starting_blk_cmt is NULL\n");
+	}
 
 	/*
 	 * Send commitment of prev uberblock and new uberblock to the ledger

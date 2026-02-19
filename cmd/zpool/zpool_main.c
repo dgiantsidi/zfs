@@ -4371,6 +4371,7 @@ zpool_do_import(int argc, char **argv)
 	char *endptr;
 
 	const char *commitment_hex = NULL;
+	const char *zil_commitments_hex = NULL;
 
 	struct option long_options[] = {
 		{"rewind-to-checkpoint", no_argument, NULL, CHECKPOINT_OPT},
@@ -4378,7 +4379,7 @@ zpool_do_import(int argc, char **argv)
 	};
 
 	/* check options */
-	while ((c = getopt_long(argc, argv, ":aC:c:d:DEfFlmnNo:R:stT:VX",
+	while ((c = getopt_long(argc, argv, ":aCZ:c:d:DEfFlmnNo:R:stT:VX",
 	    long_options, NULL)) != -1) {
 		switch (c) {
 		case 'a':
@@ -4485,6 +4486,29 @@ zpool_do_import(int argc, char **argv)
 				rewind_policy = ZPOOL_NEVER_REWIND;
 			}
 			break;
+		case 'Z':
+			/*
+			 * Usage: zpool import ... [-Z zil_head_idx:zil_tail_idx:zil_head_commitment:zil_tail_commitment] <poolname>
+			 * zil_head_idx: id
+			 * zil_head_idx: sha256 digest of the block with identifier id-1
+			 *
+			 * How to obtain these:
+			 * 	cat /proc/spl/kstat/zfs/dbgmsg 			
+			 */
+			zil_commitments_hex = optarg;
+			len = strlen(zil_commitments_hex);
+			// incorrect string length: expected 129
+			// if (len != (SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 2*sizeof(uint64_t) + 1))
+			if (len != (2*sizeof(int) + 1)) {
+				(void) fprintf(stderr, gettext("incorrect commitment length. Expected %llu, but received '%zu'\n"), (u_longlong_t)(SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 2*sizeof(uint64_t) + 1), len);
+				//usage(B_FALSE);
+			} else {
+				// correct hex string length
+				fprintf(stderr, "correct input length, %s\n", zil_commitments_hex);
+				// make sure there is no rollback/recovery when spa_load fails.
+				rewind_policy = ZPOOL_NEVER_REWIND;
+			}
+			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
 			    "'%c' option\n"), optopt);
@@ -4543,6 +4567,11 @@ zpool_do_import(int argc, char **argv)
 	// commitment_hex format: <prev_ub_digest>:<new_ub_digest>"
 	if (commitment_hex != NULL) {
 	    if (nvlist_add_string(policy, ZPOOL_LOAD_UB_COMMITMENT, commitment_hex) != 0)
+		    goto error;
+	}
+
+	if (zil_commitments_hex != NULL) {
+	    if (nvlist_add_string(policy, ZPOOL_LOAD_ZIL_COMMITMENTS, zil_commitments_hex) != 0)
 		    goto error;
 	}
 
