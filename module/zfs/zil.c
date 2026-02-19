@@ -696,7 +696,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	//final_blk_cmt = &zil_tail_commitment;
 	zfs_dbgmsg(" [zil commitments (from CCF) ----- end]\n");
 	int first_block = 1;
-
+	int verified_tail = 0;
 	if (zil_head_cmt != NULL && final_blk_cmt != NULL)
 		zfs_dbgmsg(" remount=%d zh->zh_log is a hole=%d [(!BP_IS_EMBEDDED(bp)=%d && DVA_IS_EMPTY(BP_IDENTITY(bp))=%d)] (start_blk=%llu, end_blk=%llu)\n",
 			   remount, BP_IS_HOLE(&(zh->zh_log)), (!BP_IS_EMBEDDED(&(zh->zh_log))), DVA_IS_EMPTY(BP_IDENTITY(&(zh->zh_log))),
@@ -783,6 +783,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 					zfs_dbgmsg(" this block (blk_seqno=%llu) is the tail, error should be 0 (error=%d) ..\n", 
 						(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
 						error);
+					verified_tail = (error = 0) ? 1 : 0;
 				}
 				else if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t) - sizeof(blk.blk_cksum.zc_word[ZIL_ZC_SEQ])) == 0)
 				{
@@ -794,6 +795,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 						if (error <= 0)
 						{
 							zfs_dbgmsg(" [Error] System should abort!\n");
+							verified_tail = 0;
 						}
 					}
 				}
@@ -866,7 +868,9 @@ done:
 	zilog->zl_parse_lr_seq = max_lr_seq;
 	zilog->zl_parse_blk_count = blk_count;
 	zilog->zl_parse_lr_count = lr_count;
-
+	if (!verified_tail) {
+		zfs_dbgmsg(" [Error] tail is not verified, System should abort!\n");
+	}
 	zil_bp_tree_fini(zilog);
 	//starting_blk_cmt = NULL;
 	//final_blk_cmt = NULL;
