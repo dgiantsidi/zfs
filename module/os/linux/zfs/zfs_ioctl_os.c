@@ -328,6 +328,9 @@ int thread_id = 0;
 
 struct sock *nl_sock_get_cmts = NULL;
 struct sock *nl_sock_notify = NULL;
+struct sock *nl_sock_get_ubcmts = NULL;
+struct sock *nl_sock_notify_ubcmts = NULL;
+
 
 #if 0
 __attribute__((unused)) static struct userspace_to_kernel_msg* decode_received_msg(char* msg, int msg_size) {
@@ -448,6 +451,25 @@ static void notify_cmts_callback(struct sk_buff *skb)
 		}
 	}
 	mutex_exit(&ccf_lock);
+}
+
+static void notify_ubcmts_callback(struct sk_buff *skb)
+{
+	// struct sk_buff *skb_out;
+
+	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
+	[[__maybe_unused__]] int pid = nlh->nlmsg_pid; /* pid of sending process */
+	char *msg = (char *)nlmsg_data(nlh);
+	[[__maybe_unused__]] int msg_size = nlh->nlmsg_len - NLMSG_HDRLEN;
+
+	uint64_t acknowledged_blk_id = 0;
+	memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
+
+	mutex_enter(&head_ub_lock);
+	head_ub_acked = B_TRUE;
+	cv_broadcast(&head_ub_cv);
+	printk(KERN_INFO "waking up uberblock-thread \n");
+	mutex_exit(&head_ub_lock);
 }
 
 static char *serialize_recv_cmt(
@@ -655,6 +677,62 @@ static void get_cmts_callback(struct sk_buff *skb)
 		printk(KERN_INFO "get_cmts_callback: error while sending skb to pid=%d\n", pid);
 	//printk(KERN_INFO "get_cmts_callback: watchpoint #6\n");
 }
+
+
+
+static void get_ubcmts_callback(struct sk_buff *skb)
+{
+	struct sk_buff *skb_out;
+
+	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
+	int pid = nlh->nlmsg_pid; /* pid of sending process */
+	[[__maybe_unused__]] char *msg = (char *)nlmsg_data(nlh);
+	int msg_size = nlh->nlmsg_len;
+
+
+ 
+  	printk(KERN_INFO "get_ubcmts_callback: w/ msg_size=%d from pid=%d, current pid=%d\n",\
+		msg_size, pid, current->pid);
+	
+	if (mutex_owner(&head_ub_lock) == current) {
+		// Current thread owns the lock
+		printk(KERN_INFO "[ERROR] get_ubcmts_callback: I already hold this lock  (pid=%d, current pid=%d)\n", pid, current->pid);
+	}
+
+	mutex_enter(&head_ub_lock);
+	char head_cmt[512];
+	memcpy(head_cmt, head_ub_commitment, 512);
+	mutex_exit(&head_ub_lock);
+  	
+	// create reply
+
+	if (in_atomic())
+	{
+		printk(KERN_WARNING "Called in atomic context\n");
+	}
+
+	skb_out = nlmsg_new(msg_size, 0);
+	if (!skb_out)
+	{
+		printk(KERN_ERR "get_ubcmts_callback: failed to allocate new skb size=%dB\n", msg_size);
+		return;
+	}
+	
+	// put received message into reply
+	nlh = nlmsg_put(skb_out, 0, 0, NLMSG_DONE, msg_size, 0);
+	NETLINK_CB(skb_out).dst_group = 0; /* not in mcast group */
+
+
+	memcpy(nlmsg_data(nlh), head_cmt, 512);
+
+
+	int res = nlmsg_unicast(nl_sock_get_ubcmts, skb_out, pid);
+	if (res < 0)
+		printk(KERN_INFO "get_ubcmts_callback: error while sending skb to pid=%d\n", pid);
+}
+
+
+
 
 #if 0 // this is the old callback function, which is not used anymore
 static void get_cmts_callback(struct sk_buff *skb) {
@@ -908,6 +986,9 @@ openzfs_init_os(void)
 
 	cv_init(&zil_thread_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&ccf_thread_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&head_ub_cv, NULL, CV_DEFAULT, NULL);
+	
+	mutex_init(&head_ub_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&ccf_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zil_thread_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&ccf_thread_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -919,6 +1000,15 @@ openzfs_init_os(void)
 	struct netlink_kernel_cfg cfg_notify_cmts = {
 		.input = notify_cmts_callback,
 	};
+
+	struct netlink_kernel_cfg get_ubcmts_cfg = {
+		.input = get_ubcmts_callback,
+	};
+
+	struct netlink_kernel_cfg cfg_notify_ubcmts = {
+		.input = notify_ubcmts_callback,
+	};
+
 	prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = -1;
 	nl_sock_get_cmts = netlink_kernel_create(&init_net, GET_CMTS_SOCK, &get_cmts_cfg);
 	if (!nl_sock_get_cmts)
@@ -933,6 +1023,21 @@ openzfs_init_os(void)
 		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for notifying/receiving cmts.\n");
 		return (-1);
 	}
+
+	nl_sock_get_ubcmts = netlink_kernel_create(&init_net, GET_UBCMTS_SOCK, &get_ubcmts_cfg);
+	if (!nl_sock_get_ubcmts)
+	{
+		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for getting ub cmts.\n");
+		return (-1);
+	}
+
+	nl_sock_notify_ubcmts = netlink_kernel_create(&init_net, NOTIFY_UBCMTS_SOCK, &cfg_notify_ubcmts);
+	if (!nl_sock_notify_ubcmts)
+	{
+		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for notifying ub cmts.\n");
+		return (-1);
+	}
+
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: sockets initialization is successful ..\n");
 	return (0);
 }
@@ -944,6 +1049,8 @@ openzfs_fini_os(void)
 	zfs_kmod_fini();
 	netlink_kernel_release(nl_sock_get_cmts);
 	netlink_kernel_release(nl_sock_notify);
+	netlink_kernel_release(nl_sock_get_ubcmts);
+	netlink_kernel_release(nl_sock_notify_ubcmts);
 
 	cv_destroy(&zil_thread_cv);
 	cv_destroy(&ccf_thread_cv);

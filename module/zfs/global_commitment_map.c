@@ -19,3 +19,8 @@ kcondvar_t	ccf_thread_cv;		/* signalled when "done" */
 kmutex_t	ccf_lock;	/* protects fields of this struct */
 kmutex_t	zil_thread_lock;	/* protects fields of this struct */
 kmutex_t	ccf_thread_lock;	/* protects fields of this struct */
+
+kmutex_t	head_ub_lock;	/* protects fields of this struct */
+kcondvar_t	head_ub_cv;	/* signalled when head ub is acked */
+boolean_t head_ub_acked = B_FALSE;
+char head_ub_commitment[512];

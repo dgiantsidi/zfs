@@ -4,6 +4,9 @@
 // netlink sockets definitions
 #define NOTIFY_CMTS_SOCK 31
 #define GET_CMTS_SOCK 17
+#define GET_UBCMTS_SOCK 23
+#define NOTIFY_UBCMTS_SOCK 24
+
 
 // ---- messages definitions ----
 

@@ -12,6 +12,12 @@ extern kmutex_t	    ccf_lock;	/* protects fields of this struct */
 extern kmutex_t	    zil_thread_lock;	/* protects fields of this struct */
 extern kmutex_t	    ccf_thread_lock;	/* protects fields of this struct */
 
+
+extern kmutex_t	    head_ub_lock;	/* protects fields of this struct */
+extern char head_ub_commitment[512];
+extern kcondvar_t	head_ub_cv;	/* signalled when head ub is acked */
+extern boolean_t head_ub_acked;
+
 extern dyn_array_commitments_t* ccf_zil_header_commitments;
 extern dyn_array_commitments_t* ccf_zil_tail_commitments;
 
