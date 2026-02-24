@@ -2139,19 +2139,21 @@ retry:
 		zil_head_cmt->blk_num = starting_blk_cmt->blk_num;
 		zil_head_cmt->blk_digest = starting_blk_cmt->blk_digest;
 
-		zfs_dbgmsg("zil_head_cmt:\n	zil_head_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx, zil_head_cmt->blk_digest.zc_word=%016llx:%016llx:%016llx:%016llx\n",			   
-					(u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
-					(u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
-					(u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
-					(u_longlong_t)zil_head_cmt->blk_num.zc_word[3],
-					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[0],
-					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[1],
-					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[2],
-					(u_longlong_t)zil_head_cmt->blk_digest.zc_word[3]);
+		zfs_dbgmsg("zil_head_cmt:\n	zil_head_cmt->blk_num.zc_word=%016llx:%016llx:%016llx:%016llx,\
+			zil_head_cmt->blk_digest.zc_word=%016llx:%016llx:%016llx:%016llx\n",			   
+			(u_longlong_t)zil_head_cmt->blk_num.zc_word[0],
+			(u_longlong_t)zil_head_cmt->blk_num.zc_word[1],
+			(u_longlong_t)zil_head_cmt->blk_num.zc_word[2],
+			(u_longlong_t)zil_head_cmt->blk_num.zc_word[3],
+			(u_longlong_t)zil_head_cmt->blk_digest.zc_word[0],
+			(u_longlong_t)zil_head_cmt->blk_digest.zc_word[1],
+			(u_longlong_t)zil_head_cmt->blk_digest.zc_word[2],
+			(u_longlong_t)zil_head_cmt->blk_digest.zc_word[3]);
 	}
 	else {
 		zfs_dbgmsg("zil_head_cmt or starting_blk_cmt is NULL\n");
 	}
+
 
 	/*
 	 * Send commitment of prev uberblock and new uberblock to the ledger
@@ -2182,6 +2184,38 @@ retry:
 
 	zfs_dbgmsg("Hash digest of the prev uberblock %s", prev_ub_digest->digest);
 	zfs_dbgmsg("Hash digest of the new uberblock %s", ub_digest->digest);
+
+	
+	//char serialized_buffer[512];
+	mutex_enter(&head_ub_lock);
+	size_t offset = 0;
+	memcpy(head_ub_commitment, &(ub->ub_txg), sizeof(ub->ub_txg));
+	offset += sizeof(ub->ub_txg);
+	zfs_dbgmsg("ub->ub_txg=%llu, offset=%llu\n", (u_longlong_t)ub->ub_txg, (u_longlong_t)offset);
+	memcpy(head_ub_commitment + offset, ub_digest->digest, sizeof(ub_digest->digest));
+	offset += sizeof(ub_digest->digest);
+	zfs_dbgmsg("ub_digest->digest, offset=%llu\n", (u_longlong_t)offset);
+	memcpy(head_ub_commitment + offset, &(zil_head_cmt->blk_num.zc_word[ZIL_ZC_SEQ]), \
+		sizeof(zil_head_cmt->blk_num.zc_word[ZIL_ZC_SEQ]));
+	offset += sizeof(zil_head_cmt->blk_num.zc_word[ZIL_ZC_SEQ]);
+	zfs_dbgmsg("zil_head_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%016llx, offset=%llu\n", \
+		(u_longlong_t)zil_head_cmt->blk_num.zc_word[ZIL_ZC_SEQ], (u_longlong_t)offset);
+	memcpy(head_ub_commitment + offset, zil_head_cmt->blk_digest.zc_word, sizeof(zil_head_cmt->blk_digest.zc_word));
+	offset += sizeof(zil_head_cmt->blk_digest.zc_word);
+	zfs_dbgmsg("zil_head_cmt->blk_digest.zc_word, offset=%llu\n",			   
+					(u_longlong_t)offset);
+	head_ub_acked = B_FALSE;
+	mutex_exit(&head_ub_lock);
+	mutex_enter(&head_ub_lock);
+	while (head_ub_acked == B_FALSE)
+	{
+		zfs_dbgmsg("head_ub_acked == B_FALSE for txg=%llu\n", (u_longlong_t)ub->ub_txg);
+		cv_wait(&head_ub_cv, &head_ub_lock);
+	}
+	zfs_dbgmsg("head_ub_acked == B_FALSE for txg=%llu\n", (u_longlong_t)ub->ub_txg);
+	mutex_exit(&head_ub_lock);
+
+
 
 	/*
 	 * TODO: submit commitment updates to the ledger (mocked since had no performance impact)
