@@ -4500,6 +4500,8 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 		zh->zh_log = lwb->lwb_blk;
 		zh->header_cmt = lwb->io_cksum;
 		zh->prev_header_cmt = prev_cksum; //lwb->prev_io_cksum;
+		lwb->prev_io_cksum = (lwb->prev_io_cksum.zc_word[0] == 0 && lwb->prev_io_cksum.zc_word[1] == 0 && 
+			lwb->prev_io_cksum.zc_word[2] == 0 && lwb->prev_io_cksum.zc_word[3] == 0) ? zh->prev_header_cmt : lwb->prev_io_cksum;
 		zfs_dbgmsg(" zilog=%p lwb_blk->cksum_seq_no=%016llx:%016llx:%016llx:%016llx\
       			lwb->io_cksum=%016llx:%016llx:%016llx:%016llx \
 			 	in txg=%llu w/ (lwb->lwb_state != LWB_STATE_FLUSH_DONE) = %d, lwb->lwb_alloc_txg=%llu,\
@@ -4515,7 +4517,10 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx)
                (u_longlong_t)txg, (lwb->lwb_state != LWB_STATE_FLUSH_DONE),
                (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,
                (u_longlong_t)lwb->lwb_issued_txg);
+		
 
+		//lwb->prev_io_cksum  = prev_cksum;
+		prev_cksum = lwb->io_cksum;
 		if (lwb->lwb_state != LWB_STATE_FLUSH_DONE ||
 			lwb->lwb_alloc_txg > txg || lwb->lwb_max_txg > txg)
 			break;
@@ -4528,8 +4533,7 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 				   (u_longlong_t)lwb->lwb_alloc_txg, (u_longlong_t)lwb->lwb_max_txg,
 				   (u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva), (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva),
 				   (u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
-		lwb->prev_io_cksum  = prev_cksum;
-		prev_cksum = lwb->io_cksum;
+		
 		list_remove(&zilog->zl_lwb_list, lwb);
 		if (!BP_IS_HOLE(&lwb->lwb_blk))
 			zio_free(spa, txg, &lwb->lwb_blk);
@@ -4545,16 +4549,16 @@ void zil_sync(zilog_t *zilog, dmu_tx_t *tx)
 			BP_ZERO(&zh->zh_log);
 	}
 	zfs_dbgmsg(" *************** end the zilog header is: (txg=%llu\tBP_IS_HOLE=%d\tblk_seqno=%016llx:%016llx:%016llx:%016llx\t \
-		DVA=<%llu:%llx:%llx>, cur_authenticator=%016llx:%016llx:%016llx:%016llx) ***************\n",
+		DVA=<%llu:%llx:%llx>, prev_authenticator=%016llx:%016llx:%016llx:%016llx) ***************\n",
 		(u_longlong_t)txg,
 		BP_IS_HOLE(&(zh->zh_log)), (u_longlong_t)zh->zh_log.blk_cksum.zc_word[0],
 		(u_longlong_t)zh->zh_log.blk_cksum.zc_word[1], (u_longlong_t)zh->zh_log.blk_cksum.zc_word[2],
 		(u_longlong_t)zh->zh_log.blk_cksum.zc_word[3], (u_longlong_t)DVA_GET_VDEV(zh->zh_log.blk_dva),
 		(u_longlong_t)DVA_GET_OFFSET(zh->zh_log.blk_dva), (u_longlong_t)DVA_GET_ASIZE(zh->zh_log.blk_dva),
-		(u_longlong_t)zh->header_cmt.zc_word[0], 
-		(u_longlong_t)zh->header_cmt.zc_word[1], 
-		(u_longlong_t)zh->header_cmt.zc_word[2], 
-		(u_longlong_t)zh->header_cmt.zc_word[3]);
+		(u_longlong_t)zh->prev_header_cmt.zc_word[0], 
+		(u_longlong_t)zh->prev_header_cmt.zc_word[1], 
+		(u_longlong_t)zh->prev_header_cmt.zc_word[2], 
+		(u_longlong_t)zh->prev_header_cmt.zc_word[3]);
 
 	mutex_exit(&zilog->zl_lock);
 }

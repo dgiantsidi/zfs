@@ -44,6 +44,9 @@ struct abd;
  */
 typedef void zio_checksum_t(struct abd *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp);
+typedef void zio_checksum_extended_t(struct abd *abd, uint64_t size,
+    const void *ctx_template, zio_cksum_t *zcp, zio_cksum_t* prev_zcp);
+
 typedef void zio_hash_chain_t(struct abd *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp, void* prev_hash, size_t hash_size);
 typedef void *zio_checksum_tmpl_init_t(const zio_cksum_salt_t *salt);
@@ -116,6 +119,9 @@ extern zio_hash_chain_t abd_checksum_sha256_hash_chain;
 extern zio_checksum_t abd_checksum_sha512_native;
 extern zio_checksum_t abd_checksum_sha512_byteswap;
 
+extern zio_checksum_t abd_checksum_sha256_zilog;
+extern zio_checksum_extended_t abd_checksum_sha256_zilog_prev;
+
 /* Skein */
 extern zio_checksum_t abd_checksum_skein_native;
 extern zio_checksum_t abd_checksum_skein_byteswap;
@@ -138,7 +144,6 @@ extern zio_checksum_tmpl_free_t abd_checksum_blake3_tmpl_free;
 _SYS_ZIO_CHECKSUM_H zio_abd_checksum_func_t fletcher_4_abd_ops;
 extern zio_checksum_t abd_fletcher_4_native;
 extern zio_checksum_t abd_fletcher_4_native_zilog;
-extern zio_checksum_t abd_checksum_sha256_zilog;
 extern zio_checksum_t abd_fletcher_4_byteswap;
 
 extern int zio_checksum_equal(spa_t *, blkptr_t *, enum zio_checksum,
