@@ -783,7 +783,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 					zfs_dbgmsg(" this block (blk_seqno=%llu) is the tail, error should be 0 (error=%d) ..\n", 
 						(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
 						error);
-					verified_tail = (error = 0) ? 1 : 0;
+					verified_tail = (error == 0) ? 1 : 0;
 				}
 				else if (memcmp(blk.blk_cksum.zc_word, final_blk_cmt->blk_num.zc_word, sizeof(zio_cksum_t) - sizeof(blk.blk_cksum.zc_word[ZIL_ZC_SEQ])) == 0)
 				{
@@ -792,7 +792,7 @@ int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 						zfs_dbgmsg(" this block (blk_seqno=%llu) is past tail error should be > 0 (error=%d) ..\n", 
 							(u_longlong_t)blk.blk_cksum.zc_word[ZIL_ZC_SEQ],
 							error);
-						if (error <= 0)
+						if (error == 0)
 						{
 							zfs_dbgmsg(" [Error] System should abort!\n");
 							verified_tail = 0;
@@ -868,7 +868,7 @@ done:
 	zilog->zl_parse_lr_seq = max_lr_seq;
 	zilog->zl_parse_blk_count = blk_count;
 	zilog->zl_parse_lr_count = lr_count;
-	if (!verified_tail) {
+	if (!verified_tail && remount != 0) {
 		zfs_dbgmsg(" [Error] tail is not verified, System should abort!\n");
 	}
 	zil_bp_tree_fini(zilog);
@@ -1653,7 +1653,7 @@ int zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	 */
 	error = zil_parse(zilog, zil_claim_log_block, zil_claim_log_record, tx,
 					  zilog->zl_header->zh_claim_txg ? -1ULL : spa_min_claim_txg(os->os_spa), B_FALSE);
-	remount = 2;
+	remount = 0;
 	return ((error == ECKSUM || error == ENOENT) ? 0 : error);
 }
 
