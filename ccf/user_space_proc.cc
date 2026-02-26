@@ -16,6 +16,8 @@
 #include <time.h>
 #include <unistd.h>
 
+using u_longlong_t = unsigned long long;
+
 fifo_queue<recv_cmt_msg_t *> recv_queue; // queue to store received messages
 std::atomic<int> get_thread_done(false);
 static uint64_t c_total_ops = 100e6;
@@ -24,6 +26,7 @@ std::mutex ccf_thread_mutex;
 std::unique_ptr<char[]> latest_head_ub_commitment(nullptr);
 std::atomic<uint64_t> latest_txg(0);
 std::mutex global_head_cmt;
+bool k_print_cmts = false;
 
 static inline uint64_t get_current_time_ns() {
   struct timespec ts;
@@ -52,8 +55,8 @@ static void *notify_ubcmts(void *arg_poolname) {
   src_addr.nl_pid = getpid(); /* self pid */
   src_addr.nl_groups = 0;     /* not in mcast groups */
   if (bind(sock_fd, (struct sockaddr *)&src_addr, sizeof(src_addr)) < 0) {
-    printf("error binding the socket of type=%s, errno: %s\n",
-           get_socket_type(NOTIFY_UBCMTS_SOCK), strerror(errno));
+    printf("error binding the socket of type=NOTIFY_UBCMTS_SOCK, errno: %s\n",
+           strerror(errno));
     close(sock_fd);
     return NULL;
   }
@@ -66,7 +69,8 @@ static void *notify_ubcmts(void *arg_poolname) {
       // waiting for the first commitment to be generated
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    while (acknowledged_txg_ub >= latest_txg.load()) {
+    while (acknowledged_txg_ub == latest_txg.load()) {
+      // we avoid using the >= to enable notifying uberblock thread when we destroy and re-create the pool
       // waiting for a new commitment to be generated
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -110,7 +114,6 @@ static void *notify_ubcmts(void *arg_poolname) {
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
 
-    printf("notify_ubcmts: sending notification to kernel about new uberblock commitment for ub_txg=%lu\n", ub_txg);
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
       printf("error seding the message: %s\n", strerror(errno));
@@ -200,7 +203,6 @@ static void *notify_cmts(void *arg_poolname) {
     char *tx_msg =
         serialize_notify_cmt_into_char(last_cmt->poolname, last_cmt->blk_id);
     uint64_t last_blk_id = last_cmt->blk_id;
-    free(last_cmt);
 
     /* fill in the netlink message payload */
     memcpy(NLMSG_DATA(nlh), tx_msg, sizeof(notify_cmt_msg_t));
@@ -218,8 +220,17 @@ static void *notify_cmts(void *arg_poolname) {
     uint64_t blk_id = 0;
     memcpy(&blk_id, tx_msg, sizeof(uint64_t));
 #if 0
-    printf("%s send to kernel: {%ld, %dB}\n", __func__, blk_id, nlh->nlmsg_len);
+    printf("%s send to kernel: {%ld, %dB}\n", __func__, blk_id, nlh->nlmsg_len)
 #endif
+  if (k_print_cmts) {
+    uint64_t tail_digest[4];
+    ::memcpy(tail_digest, last_cmt->tail_commitment, sizeof(tail_digest));
+
+    printf("%s for blk=%016x (%ld)}\n", __func__, blk_id, blk_id); 
+    
+    printf("%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)tail_digest[0],\
+    (u_longlong_t)tail_digest[1], (u_longlong_t)tail_digest[2], (u_longlong_t)tail_digest[3]);
+  }
 
     int rc = sendmsg(sock_fd, &msg, 0);
     if (rc < 0) {
@@ -230,6 +241,8 @@ static void *notify_cmts(void *arg_poolname) {
     total_ops++;
     free(nlh);
     free(tx_msg);
+    free(last_cmt);
+
     last_acked_blk_id = last_blk_id;
     std::vector<recv_cmt_msg_t *> to_be_deleted =
         recv_queue.pop_until_blk_id(last_acked_blk_id);
@@ -386,7 +399,6 @@ static void *get_cmts(void *arg_poolname) {
   return NULL;
 }
 
-using u_longlong_t = unsigned long long;
 static void *get_cmts_ub(void *arg_poolname) {
   [[__maybe_unused__]] const char *poolname = (const char *)arg_poolname;
   static uint64_t expected_blk_id = 0; // static to retain value between calls
@@ -522,11 +534,14 @@ int main(int argc, char **argv) {
   pthread_t get_cmts_thread, notify_cmts_thread, get_ubcmts_thread, notify_ubcmts_thread;
 
   if (argc == 1) {
-    fprintf(stderr, "Usage: %s <poolname> [<total_ops>]\n", argv[0]);
+    fprintf(stderr, "Usage: %s <poolname> [<threads> <enable_print>]\n", argv[0]);
     return 1;
   }
   char *poolname = argv[1];
   printf("poolname: %s\n", poolname);
+  if (argc >= 3) {
+    k_print_cmts = atoi(argv[2]) != 0;
+  }
 
   // create two threads
   if (pthread_create(&get_cmts_thread, NULL, get_cmts, poolname) != 0) {
@@ -538,7 +553,7 @@ int main(int argc, char **argv) {
     perror("failed to create notify_cmts_thread");
     return 1;
   }
-
+#if 1
   if (pthread_create(&get_ubcmts_thread, NULL, get_cmts_ub, poolname) != 0) {
     perror("failed to create get_ubcmts_thread");
     return 1;
@@ -549,7 +564,7 @@ int main(int argc, char **argv) {
     perror("failed to create notify_ubcmts_thread");
     return 1;
   }
-
+#endif
   // wait for both threads to finish
   pthread_join(get_cmts_thread, NULL);
   get_thread_done.store(true);
