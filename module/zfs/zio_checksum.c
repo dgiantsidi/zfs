@@ -90,7 +90,7 @@ static int is_verification_path(zio_cksum_t *zcp) {
 	return 0;
 }
 
-static __attribute__((unused)) void verify_path_compute_fletcher_hash_chain(void* previous_blk_hash, zil_chain_t* zilc,\
+[[maybe_unused]] static __attribute__((unused)) void verify_path_compute_fletcher_hash_chain(void* previous_blk_hash, zil_chain_t* zilc,\
 	 abd_t *abd, zio_abd_checksum_data_t* acd, uint64_t size, zio_cksum_t* cur_block_cksum) {
 	ASSERT(0);
 	// check if it is empty; there is no previous block
@@ -148,20 +148,20 @@ static __attribute__((unused)) void verify_path_compute_fletcher_hash_chain(void
 }
 
 
-static void verify_path_compute_fletcher_self_checksumming(zil_chain_t* zilc, abd_t *abd,\
+[[maybe_unused]] static void verify_path_compute_fletcher_self_checksumming(zil_chain_t* zilc, abd_t *abd,\
 	zio_abd_checksum_data_t* acd, uint64_t size, zio_cksum_t* cur_block_cksum) {
 	(void) zilc;
 	(void) cur_block_cksum;
 	abd_fletcher_4_impl(abd, size, acd);
 }
 
-static __attribute__((unused)) void compute_path_compute_fletcher_self_checksumming(zil_chain_t* zilc, \
+[[maybe_unused]] static __attribute__((unused)) void compute_path_compute_fletcher_self_checksumming(zil_chain_t* zilc, \
 	abd_t *abd, zio_abd_checksum_data_t* acd, uint64_t size) {
 	(void) zilc;
 	abd_fletcher_4_impl(abd, size, acd);
 }
 
-static  __attribute__((unused)) void verify_path_compute_sha256_self_checksumming(zil_chain_t* zilc, abd_t *abd,\
+[[maybe_unused]] static  __attribute__((unused)) void verify_path_compute_sha256_self_checksumming(zil_chain_t* zilc, abd_t *abd,\
 	uint64_t size, const void *ctx_template, zio_cksum_t *zcp, zio_cksum_t* cur_block_cksum) {
 	(void) zilc;
 	(void) cur_block_cksum;
@@ -483,8 +483,8 @@ void abd_checksum_sha256_zilog(abd_t *abd, uint64_t size,
 		// keeps the latest blk_hash and the latest blk to compute the next hash
 		// we rely on the fact that the zil blocks are processed in order in a single thread context
 		// todo: we should probably keep a hash map here because we might have multiple ZILs
-		static zio_cksum_t previous_blk_hash = {0,0,0,0};
-		static zio_cksum_t previous_blk = {0,0,0,0};
+		static zio_cksum_t previous_blk_hash = {{0,0,0,0}};
+		static zio_cksum_t previous_blk = {{0,0,0,0}};
 		/*
 		// @dimitra: this is the previous idea where we get the previous hash from the map
 		mutex_enter(&my_mutex);
@@ -541,6 +541,7 @@ void
 abd_fletcher_4_native_zilog(abd_t *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp)
 {
+	(void) abd, (void) size, (void) ctx_template, (void) zcp;
 	ASSERT(0);
 	#if 0
 	(void) ctx_template;

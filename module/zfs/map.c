@@ -27,7 +27,7 @@ __attribute__((unused)) void cleanup_global_variable(C_map_t *map) {
 
 __attribute__((unused)) C_map_node_t **
 get_bucket(C_map_t *map, const cksum_seqno *key, const zc_eck *value) {
-  int count = 0;
+  [[maybe_unused]] int count = 0;
   for (int i = 0; i < N_BUCKETS; i++) {
     if (map->hash_map[i] != NULL) {
       if (memcmp(map->hash_map[i]->key.zc_word, key->zc_word,

@@ -598,16 +598,16 @@ dsl_pool_mos_diduse_space(dsl_pool_t *dp,
 
 
 static void append_objset_zil_header_cmt(dsl_dataset_t* ds, int* objset_count, const uint64_t txg) {
-	(void) ds;
-	(void) objset_count;
-	(void) txg;
-	
+	zfs_dbgmsg(" [append_objset_zil_header_cmt] 1\n");
 	#if 1
 	objset_t *os = ds->ds_objset;
-	char name[100];
+	zfs_dbgmsg(" [append_objset_zil_header_cmt] 2 os=NULL->%s\n", (os->os_dsl_dataset == NULL) ? "true" : "false");
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 	dsl_dataset_name(os->os_dsl_dataset, name);
+	zfs_dbgmsg(" [append_objset_zil_header_cmt] 3 os=NULL->%s\n", (os->os_dsl_dataset == NULL) ? "true" : "false");
+
 	zil_header_t zh = os->os_phys->os_zil_header;
-	zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
+	[[maybe_unused]] zio_cksum_t cur_block_cksum = zh.zh_log.blk_cksum;
 	zio_cksum_t blk_zc_eck = zh.header_cmt;
 
 	#if 0
@@ -784,6 +784,10 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		// but these will be registered to 
 		// CCF only when the uberblock is going to be persisted
 		// as such we do not update CCF for a frozen pool
+		objset_t *os = ds->ds_objset;
+
+		zfs_dbgmsg(" [sync again] dataset=%p\n", os->os_dsl_dataset);
+
 		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 	VERIFY0(zio_wait(rio));
@@ -811,6 +815,10 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		// but these will be registered to 
 		// CCF only when the uberblock is going to be persisted
 		// as such we do not update CCF for a frozen pool
+		objset_t *os = ds->ds_objset;
+
+		zfs_dbgmsg(" [sync again0] dataset=%p\n", os->os_dsl_dataset);
+
 		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 	taskq_wait(dp->dp_sync_taskq);
@@ -834,6 +842,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		// but these will be registered to 
 		// CCF only when the uberblock is going to be persisted
 		// as such we do not update CCF for a frozen pool
+		zfs_dbgmsg(" [sync again1] dataset=%p\n", os->os_dsl_dataset);
 		append_objset_zil_header_cmt(ds, &objset_count, txg);
 
 		/*
@@ -861,6 +870,7 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 	while ((ds = list_remove_head(&synced_datasets)) != NULL) {
 		objset_t *os = ds->ds_objset;
 
+	
 		if (os->os_encrypted && !os->os_raw_receive &&
 		    !os->os_next_write_raw[txg & TXG_MASK]) {
 			ASSERT3P(ds->ds_key_mapping, !=, NULL);
@@ -868,13 +878,14 @@ dsl_pool_sync(dsl_pool_t *dp, uint64_t txg)
 		}
 
 		dsl_dataset_sync_done(ds, tx);
+		zfs_dbgmsg(" [sync again2] dataset=%p\n", os->os_dsl_dataset);
+		append_objset_zil_header_cmt(ds, &objset_count, txg);
 		dmu_buf_rele(ds->ds_dbuf, ds);
 		// we might update the global state with the commitments 
 		// but these will be registered to 
 		// CCF only when the uberblock is going to be persisted
 		// as such we do not update CCF for a frozen pool
 		
-		append_objset_zil_header_cmt(ds, &objset_count, txg);
 	}
 
 	while ((dd = txg_list_remove(&dp->dp_dirty_dirs, txg)) != NULL) {

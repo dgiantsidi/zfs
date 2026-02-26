@@ -840,8 +840,9 @@ done:
   zilog->zl_parse_blk_count = blk_count;
   zilog->zl_parse_lr_count = lr_count;
   // todo: check that the tail commitment is the last block
-  if (remount && !tail_verified)
+  if (remount && !tail_verified) {
     zfs_dbgmsg(" hash chain is compromized, abort!\n");
+  }
   else if (remount && tail_verified) {
     zfs_dbgmsg(" hash chain is verified, tail is correct!\n");
   }

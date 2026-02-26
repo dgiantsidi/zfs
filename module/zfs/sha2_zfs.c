@@ -84,7 +84,7 @@ abd_checksum_sha256_hash_chain(abd_t *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp, void* prev_hash, size_t hash_size)
 {
 	(void) ctx_template;
-	int ret;
+	[[maybe_unused]] int ret;
 	SHA2_CTX ctx;
 	zio_cksum_t tmp;
 
@@ -93,7 +93,7 @@ abd_checksum_sha256_hash_chain(abd_t *abd, uint64_t size,
 	sha_incremental(prev_hash, hash_size, &ctx);
 	SHA2Final(&tmp, &ctx);
 
-bswap:
+//bswap:
 	/*
 	 * A prior implementation of this function had a
 	 * private SHA256 implementation always wrote things out in

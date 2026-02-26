@@ -505,14 +505,35 @@ dsl_dataset_get_snapname(dsl_dataset_t *ds)
 	dsl_dataset_phys_t *headphys;
 	int err;
 	dmu_buf_t *headdbuf;
+	if (ds == NULL) {
+		zfs_dbgmsg("dsl_dataset_get_snapname: NULL dataset\n");
+	}
+	if (ds->ds_dir == NULL) {
+		zfs_dbgmsg("dsl_dataset_get_snapname: dataset %p has NULL dir\n",
+		    (void *)ds);
+	}
+	if (ds->ds_dir->dd_pool == NULL) {
+		zfs_dbgmsg("dsl_dataset_get_snapname: dataset %p has NULL pool\n",
+		    (void *)ds);
+	}
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	objset_t *mos = dp->dp_meta_objset;
 
-	if (ds->ds_snapname[0])
+	zfs_dbgmsg("dsl_dataset_get_snapname: dataset %p, obj %llu\n",
+	    (void *)ds, (u_longlong_t)ds->ds_object);
+	if (ds->ds_snapname[0]) {
+		zfs_dbgmsg("dsl_dataset_get_snapname: snapname already set to %s\n",
+		    ds->ds_snapname);
 		return (0);
-	if (dsl_dataset_phys(ds)->ds_next_snap_obj == 0)
+	}
+	if (dsl_dataset_phys(ds)->ds_next_snap_obj == 0) {
+		zfs_dbgmsg("dsl_dataset_get_snapname: dataset %p has no next snap\n",
+		    (void *)ds);
 		return (0);
+	}
 
+	zfs_dbgmsg("dsl_dataset_get_snapname: looking up snapname for dataset %p\n",
+	    (void *)ds);
 	err = dmu_bonus_hold(mos, dsl_dir_phys(ds->ds_dir)->dd_head_dataset_obj,
 	    FTAG, &headdbuf);
 	if (err != 0)
@@ -527,6 +548,8 @@ dsl_dataset_get_snapname(dsl_dataset_t *ds)
 		    "SNAPOBJ=%llu-ERR=%d",
 		    (unsigned long long)ds->ds_object, err);
 	}
+	zfs_dbgmsg("dsl_dataset_get_snapname: end for dataset %p\n",
+	    (void *)ds);
 	dmu_buf_rele(headdbuf, FTAG);
 	return (err);
 }
@@ -961,10 +984,15 @@ void
 dsl_dataset_name(dsl_dataset_t *ds, char *name)
 {
 	if (ds == NULL) {
+		zfs_dbgmsg("dsl_dataset_name: NULL dataset (MOS)");
 		(void) strlcpy(name, "mos", ZFS_MAX_DATASET_NAME_LEN);
 	} else {
+		zfs_dbgmsg("dsl_dataset_name:1 dataset %p", (void *)ds);
 		dsl_dir_name(ds->ds_dir, name);
+		zfs_dbgmsg("dsl_dataset_name:2 dataset %p", (void *)ds);
 		VERIFY0(dsl_dataset_get_snapname(ds));
+		zfs_dbgmsg("dsl_dataset_name:3 dataset %p", (void *)ds);
+
 		if (ds->ds_snapname[0]) {
 			VERIFY3U(strlcat(name, "@", ZFS_MAX_DATASET_NAME_LEN),
 			    <, ZFS_MAX_DATASET_NAME_LEN);
