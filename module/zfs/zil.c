@@ -1888,7 +1888,14 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	//ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
 	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	uint64_t start_time = gethrtime();
-	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu start_time=%llu\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)start_time);
+	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu start_time=%llu\
+		io_cksum=%016llx:%016llx:%016llx:%016llx\
+		tail_commitment_copy->cmt->commitmnt=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
+		(u_longlong_t)start_time,\
+		(u_longlong_t)lwb->io_cksum.zc_word[0], (u_longlong_t)lwb->io_cksum.zc_word[1], (u_longlong_t)lwb->io_cksum.zc_word[2], (u_longlong_t)lwb->io_cksum.zc_word[3],
+		(u_longlong_t)tail_commitment_copy->blk_digest.zc_word[0],\
+		(u_longlong_t)tail_commitment_copy->blk_digest.zc_word[1],\
+		(u_longlong_t)tail_commitment_copy->blk_digest.zc_word[2], (u_longlong_t)tail_commitment_copy->blk_digest.zc_word[3]);
 
 	while ((itx = list_remove_head(&lwb->lwb_itxs)) != NULL)
 		zil_itx_destroy(itx);

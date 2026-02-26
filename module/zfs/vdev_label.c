@@ -2206,22 +2206,24 @@ retry:
 					(u_longlong_t)offset);
 	head_ub_acked = B_FALSE;
 	mutex_exit(&head_ub_lock);
+	#if 1
 	mutex_enter(&head_ub_lock);
 	while (head_ub_acked == B_FALSE)
 	{
 		zfs_dbgmsg("head_ub_acked == B_FALSE for txg=%llu\n", (u_longlong_t)ub->ub_txg);
 		cv_wait(&head_ub_cv, &head_ub_lock);
 	}
-	zfs_dbgmsg("head_ub_acked == B_FALSE for txg=%llu\n", (u_longlong_t)ub->ub_txg);
+	zfs_dbgmsg("head_ub_acked == %s for txg=%llu\n", (head_ub_acked ? "B_TRUE" : "B_FALSE"), (u_longlong_t)ub->ub_txg);
 	mutex_exit(&head_ub_lock);
-
+	#endif
 
 
 	/*
 	 * TODO: submit commitment updates to the ledger (mocked since had no performance impact)
 	 */
-	hrtime_t ms_delay = 10; // 10ms (extremely huge)
-	zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
+	//hrtime_t ms_delay = 10; // 10ms (extremely huge)
+	//zfs_sleep_until(gethrtime() + MSEC2NSEC(ms_delay));
+	
 	/*
 	 * Sync the uberblocks to all vdevs in svd[].
 	 * If the system dies in the middle of this step, there are two cases
