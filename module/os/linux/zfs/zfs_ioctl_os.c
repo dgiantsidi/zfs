@@ -464,6 +464,8 @@ static void notify_ubcmts_callback(struct sk_buff *skb)
 
 	uint64_t acknowledged_blk_id = 0;
 	memcpy(&acknowledged_blk_id, msg, sizeof(uint64_t));
+	printk(KERN_INFO "waking up uberblock-thread for acknowledged_blk_id=%lld \n", 
+		acknowledged_blk_id);
 
 	mutex_enter(&head_ub_lock);
 	head_ub_acked = B_TRUE;
@@ -482,6 +484,20 @@ static char *serialize_recv_cmt(
 		   ZFS_MAX_DATASET_NAME_LEN);
 	memcpy(dst_buf + sizeof(blk_id) + ZFS_MAX_DATASET_NAME_LEN, tail_commitment.zc_word,
 		   sizeof(zio_cksum_t));
+	printk(KERN_INFO "serialize_recv_cmt: serialized commitment with blk_id=%lld for pool %s is\
+		%016llx:%016llx:%016llx:%016llx\n", blk_id, poolname,\
+		(u_longlong_t)tail_commitment.zc_word[0], \
+		(u_longlong_t)tail_commitment.zc_word[1], \
+		(u_longlong_t)tail_commitment.zc_word[2], \
+		(u_longlong_t)tail_commitment.zc_word[3]);
+	printk(KERN_INFO "serialize_recv_cmt: serialized message content (hex) is: ");
+	char* tmp = dst_buf + sizeof(blk_id) + ZFS_MAX_DATASET_NAME_LEN;
+	for (size_t i = 0; i < sizeof(zio_cksum_t); i++) {
+		if (i > 0 && i % 8 == 0)
+			printk(KERN_CONT ":");
+		printk(KERN_CONT "%02x", (unsigned char)tmp[i]);
+	}
+	printk(KERN_CONT "\n");
 	return dst_buf;
 }
 
@@ -630,6 +646,7 @@ static void get_cmts_callback(struct sk_buff *skb)
 				latest_cmt = latest_cmt_node->cmt;
 				to_be_copied = serialize_recv_cmt(get_cmt->poolname, latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ],
 												  latest_cmt->blk_digest);
+				
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
 				printk(KERN_INFO "get_cmts_callback (release ccf_lock): To send zil_blk_id=%llu current pid=%d\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], current->pid);
 				mutex_exit(&ccf_lock);
@@ -691,8 +708,8 @@ static void get_ubcmts_callback(struct sk_buff *skb)
 
 
  
-  	printk(KERN_INFO "get_ubcmts_callback: w/ msg_size=%d from pid=%d, current pid=%d\n",\
-		msg_size, pid, current->pid);
+  	//printk(KERN_INFO "get_ubcmts_callback: w/ msg_size=%d from pid=%d, current pid=%d\n",\
+	//	msg_size, pid, current->pid);
 	
 	if (mutex_owner(&head_ub_lock) == current) {
 		// Current thread owns the lock
