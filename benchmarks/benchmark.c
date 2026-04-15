@@ -8,7 +8,7 @@
 
 #define MAX_THREADS 128
 #define WRITE_SIZE 4096
-#define NUM_WRITES 5//200000
+#define NUM_WRITES 10000//200000
 
 double thread_times[MAX_THREADS];
 

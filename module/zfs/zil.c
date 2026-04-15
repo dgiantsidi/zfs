@@ -4140,7 +4140,7 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 		uint64_t start_time = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->start_ts;
 		uint64_t latency = NSEC2USEC((end_time - start_time));
 		if (start_time == 0) {
-			zfs_dbgmsg(" [ERROR@Finalization] valid zcw->block_id=%d is safe to ccf = %s latency(us)=%llu",
+			zfs_dbgmsg2(" [ERROR@Finalization] valid zcw->block_id=%d is safe to ccf = %s latency(us)=%llu",
 					(int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
 					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", (u_longlong_t) latency);
 		}
