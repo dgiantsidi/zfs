@@ -82,6 +82,11 @@ extern void __dprintf(boolean_t dprint, const char *file, const char *func,
  * that it can have on performance.
  */
 #define	zfs_dbgmsg(...) \
+	if (zfs_dbgmsg_enable && 0) \
+		__dprintf(B_FALSE, __FILE__, __func__, __LINE__, __VA_ARGS__)
+		//((void)0)
+
+#define	zfs_dbgmsg2(...) \
 	if (zfs_dbgmsg_enable) \
 		__dprintf(B_FALSE, __FILE__, __func__, __LINE__, __VA_ARGS__)
 		//((void)0)
