@@ -2185,7 +2185,8 @@ retry:
 	zfs_dbgmsg("Hash digest of the prev uberblock %s", prev_ub_digest->digest);
 	zfs_dbgmsg("Hash digest of the new uberblock %s", ub_digest->digest);
 
-	
+	uint64_t  start_time = gethrtime();
+
 	//char serialized_buffer[512];
 	mutex_enter(&head_ub_lock);
 	size_t offset = 0;
@@ -2213,8 +2214,12 @@ retry:
 		zfs_dbgmsg("head_ub_acked == B_FALSE for txg=%llu\n", (u_longlong_t)ub->ub_txg);
 		cv_wait(&head_ub_cv, &head_ub_lock);
 	}
-	zfs_dbgmsg("head_ub_acked == %s for txg=%llu\n", (head_ub_acked ? "B_TRUE" : "B_FALSE"), (u_longlong_t)ub->ub_txg);
+	
 	mutex_exit(&head_ub_lock);
+	uint64_t  end_time = gethrtime();
+	uint64_t latency = NSEC2USEC((end_time - start_time));
+
+	zfs_dbgmsg2("head_ub_acked == %s for txg=%llu, latency=%llu us\n", (head_ub_acked ? "B_TRUE" : "B_FALSE"), (u_longlong_t)ub->ub_txg, (u_longlong_t)latency);
 	#endif
 
 
