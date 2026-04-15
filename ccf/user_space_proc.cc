@@ -67,12 +67,14 @@ static void *notify_ubcmts(void *arg_poolname) {
   for (;;) {
     while (latest_txg.load() == 0) {
       // waiting for the first commitment to be generated
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+     //  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      usleep(5);
     }
     while (acknowledged_txg_ub == latest_txg.load()) {
       // we avoid using the >= to enable notifying uberblock thread when we destroy and re-create the pool
       // waiting for a new commitment to be generated
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      //std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      usleep(5); 
     }
 
     std::unique_ptr<char[]> recv_msg = std::make_unique<char[]>(512);
@@ -509,7 +511,7 @@ static void *get_cmts_ub(void *arg_poolname) {
     prev_zil_head_blk_num = zil_head_blk_num;
     // recv_queue.push(recv_msg); // push the received message to the queue
 
-    usleep(1000); // 
+    usleep(5); // 
     free(nlh);
   }
 
