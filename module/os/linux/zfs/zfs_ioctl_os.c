@@ -1041,6 +1041,7 @@ openzfs_init_os(void)
 		return (-1);
 	}
 
+#if 1
 	nl_sock_get_ubcmts = netlink_kernel_create(&init_net, GET_UBCMTS_SOCK, &get_ubcmts_cfg);
 	if (!nl_sock_get_ubcmts)
 	{
@@ -1054,7 +1055,7 @@ openzfs_init_os(void)
 		printk(KERN_NOTICE "Shielded ZFS w/ acks: error creating socket for notifying ub cmts.\n");
 		return (-1);
 	}
-
+#endif
 	printk(KERN_NOTICE "Shielded ZFS w/ acks: sockets initialization is successful ..\n");
 	return (0);
 }
