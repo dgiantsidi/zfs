@@ -1670,6 +1670,7 @@ zil_commit_waiter_skip(zil_commit_waiter_t *zcw)
 {
 	mutex_enter(&zcw->zcw_lock);
 	ASSERT3B(zcw->zcw_done, ==, B_FALSE);
+	zfs_dbgmsg2(" [ZIL] skipping waiter zcw=%p", (void *)zcw);
 	zcw->zcw_done = B_TRUE;
 	cv_broadcast(&zcw->zcw_cv);
 	mutex_exit(&zcw->zcw_lock);
@@ -1848,8 +1849,8 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	objset_t *os = zilog->zl_os;
 	dsl_dataset_name(os->os_dsl_dataset, name);
-#if 0
-	zfs_dbgmsg(" name=%s\t lwb_blk->cksum_seq_no=%llu in txg_sync=%llu w/ DVA=<%llu:%llx:%llx>\n", name, \
+#if 1
+	zfs_dbgmsg2(" name=%s\t lwb_blk->cksum_seq_no=%llu in txg_sync=%llu w/ DVA=<%llu:%llx:%llx>\n", name, \
 		(u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ], (u_longlong_t)lwb->lwb_issued_txg, \
 		(u_longlong_t)DVA_GET_VDEV(lwb->lwb_blk.blk_dva),  (u_longlong_t)DVA_GET_OFFSET(lwb->lwb_blk.blk_dva), \
 		(u_longlong_t)DVA_GET_ASIZE(lwb->lwb_blk.blk_dva));
@@ -1888,7 +1889,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	//ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
 	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	uint64_t start_time = gethrtime();
-	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu start_time=%llu\
+	zfs_dbgmsg2(" **** tail_commitment end **** block id=%llu start_time=%llu\
 		io_cksum=%016llx:%016llx:%016llx:%016llx\
 		tail_commitment_copy->cmt->commitmnt=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
 		(u_longlong_t)start_time,\
@@ -1909,7 +1910,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		ccf_waiter_t *zcw_copy = kmem_alloc(sizeof(ccf_waiter_t), KM_SLEEP);
 		zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->start_ts = gethrtime();
 		zcw_copy->zcw_ccf_ptr = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr;
-// zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
+		zfs_dbgmsg2(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
 
 // memcpy(zcw_copy, zcw->zcw_ccf_ptr, sizeof(ccf_cond_var_t));
 #if 0
@@ -4121,6 +4122,9 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 		*/
 		while (zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_FALSE)
 		{
+			zfs_dbgmsg2(" [Waiting] zcw->block_id=%llu is not safe to ccf yet = %s, waiting... ",\
+				(u_longlong_t)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
+				(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
 			cv_wait(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_cv, &zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
 		}
 	}
@@ -4140,7 +4144,7 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 		uint64_t start_time = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->start_ts;
 		uint64_t latency = NSEC2USEC((end_time - start_time));
 		if (start_time == 0) {
-			zfs_dbgmsg2(" [ERROR@Finalization] valid zcw->block_id=%d is safe to ccf = %s latency(us)=%llu",
+			zfs_dbgmsg2(" [Error@Finalization] valid zcw->block_id=%d (is it -1?) is safe to ccf = %s latency(us)=%llu",
 					(int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
 					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", (u_longlong_t) latency);
 		}
@@ -4148,18 +4152,23 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 			sum_latency += latency;
 			count_ccf_blocks++;
 			uint64_t avg_latency_us = sum_latency / count_ccf_blocks;
-			zfs_dbgmsg(" [Finalization] valid zcw->block_id=%d is safe to ccf = %s latency=%llu us (avg_latency=%llu us over %llu waiters)",
+			
+			zfs_dbgmsg2(" [Finalization] valid zcw->block_id=%d is safe to ccf = %s latency=%llu us (avg_latency=%llu us over %llu waiters)",
 					(int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
 					(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", 
 					(u_longlong_t) latency, (u_longlong_t)avg_latency_us, (u_longlong_t)count_ccf_blocks);
+			
 		}
 		ASSERT3B(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked, ==, B_TRUE);
 	}
 	else
 	{
-		zfs_dbgmsg(" [Finalization] empty zil zcw->block_id %d is safe to ccf = %s",
+		// zcw->block_id = -1 indicates this waiter is not associated with any block, so we can skip the CCF waiting and just finalize it.
+		// this happens when the waiter is skipped due to the associated itx being cleaned before it can be committed to an lwb, which can occur when
+		// there are long delays between itx generation and itx commit, such that the itx's txg has already been synced by spa_sync, so the itx is cleaned before it can be committed to an lwb.
+		zfs_dbgmsg2(" [Finalization] empty zil zcw->block_id %d is safe to ccf = %s, zcw=%p",\
 				   (int)zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_id,
-				   (zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false");
+				   (zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_block_ccf_acked == B_TRUE) ? "true" : "false", (void*)zcw);
 	}
 	mutex_destroy(&zcw->zcw_lock);
 
