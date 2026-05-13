@@ -4275,12 +4275,13 @@ spa_ld_select_uberblock(spa_t *spa, spa_import_type_t type)
 				new_ub_digest->digest[64] = '\0';
 
 			}
-			break;
+			//break;
 		}
 		else if (strcmp(nm, ZPOOL_CONFIG_ZIL_COMMITMENTS) == 0) {
 			// nvpair handles the memory lifecycle
 			(void) nvpair_value_string(elem, &zil_commitments_nvpair);
 			// copy commitment hex
+			zfs_dbgmsg2("Found zil_commitments_nvpair: %s", zil_commitments_nvpair);
 			if (zil_commitments_nvpair != NULL) {
 				// locate the colon
 				const char *first_colon = strchr(zil_commitments_nvpair, ':');
