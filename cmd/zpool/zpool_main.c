@@ -4379,7 +4379,7 @@ zpool_do_import(int argc, char **argv)
 	};
 
 	/* check options */
-	while ((c = getopt_long(argc, argv, ":aCZ:c:d:DEfFlmnNo:R:stT:VX",
+	while ((c = getopt_long(argc, argv, ":aC:Z:c:d:DEfFlmnNo:R:stT:VX",
 	    long_options, NULL)) != -1) {
 		switch (c) {
 		case 'a':
@@ -4473,7 +4473,10 @@ zpool_do_import(int argc, char **argv)
 			 * How to obtain new_commitment:
 			 * 	cat /proc/spl/kstat/zfs/dbgmsg | grep "new uberblock" | tail -n 1 | tail -c 65 | head -c 64
 			 */
+			fprintf(stdout, "importing from uberblock commitments:\n");
 			commitment_hex = optarg;
+			fprintf(stdout, " %s\n", commitment_hex);
+
 			size_t len = strlen(commitment_hex);
 			// incorrect string length: expected 129
 			if (len != (SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 1)) {
@@ -4495,19 +4498,12 @@ zpool_do_import(int argc, char **argv)
 			 * How to obtain these:
 			 * 	cat /proc/spl/kstat/zfs/dbgmsg 			
 			 */
+			fprintf(stdout, "importing from ZIL commitments:\n");
 			zil_commitments_hex = optarg;
+			fprintf(stdout, " %s\n", zil_commitments_hex);
+
 			len = strlen(zil_commitments_hex);
-			// incorrect string length: expected 129
-			// if (len != (SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 2*sizeof(uint64_t) + 1))
-			if (len != (2*sizeof(int) + 1)) {
-				(void) fprintf(stderr, gettext("incorrect commitment length. Expected %llu, but received '%zu'\n"), (u_longlong_t)(SHA256_DIGEST_LENGTH * HEX_PER_UINT8 * 2 + 2*sizeof(uint64_t) + 1), len);
-				//usage(B_FALSE);
-			} else {
-				// correct hex string length
-				fprintf(stderr, "correct input length, %s\n", zil_commitments_hex);
-				// make sure there is no rollback/recovery when spa_load fails.
-				rewind_policy = ZPOOL_NEVER_REWIND;
-			}
+			rewind_policy = ZPOOL_NEVER_REWIND;
 			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
