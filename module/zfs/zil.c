@@ -1889,7 +1889,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 	//ccf_zil_commitments_protocol(ccf_zil_header_commitments, ccf_zil_tail_commitments, tail_commitment);
 	// ccf_commit_cmts(ccf_zil_tail_commitments, ZIL_TAIL_COMMITMENT);
 	uint64_t start_time = gethrtime();
-	zfs_dbgmsg2(" **** tail_commitment end **** block id=%llu start_time=%llu\
+	zfs_dbgmsg(" **** tail_commitment end **** block id=%llu start_time=%llu\
 		io_cksum=%016llx:%016llx:%016llx:%016llx\
 		tail_commitment_copy->cmt->commitmnt=%016llx:%016llx:%016llx:%016llx\n", (u_longlong_t)lwb->lwb_blk.blk_cksum.zc_word[ZIL_ZC_SEQ],\
 		(u_longlong_t)start_time,\
@@ -1910,7 +1910,7 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 		ccf_waiter_t *zcw_copy = kmem_alloc(sizeof(ccf_waiter_t), KM_SLEEP);
 		zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->start_ts = gethrtime();
 		zcw_copy->zcw_ccf_ptr = zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr;
-		zfs_dbgmsg2(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
+		zfs_dbgmsg(" [Step 2: memcpy] (*zcw_copy)->zcw_block_id=%llu\n", (u_longlong_t)(zcw_copy)->zcw_ccf_ptr->zcw_block_id);
 
 // memcpy(zcw_copy, zcw->zcw_ccf_ptr, sizeof(ccf_cond_var_t));
 #if 0
@@ -4174,8 +4174,8 @@ zil_free_commit_waiter(zil_commit_waiter_t *zcw)
 
 	mutex_destroy(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_lock);
 	cv_destroy(&zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr->zcw_ccf_cv);
-	kmem_free(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr, sizeof(ccf_waiter_t));
-	kmem_free(zcw->zcw_ccf_waiter_ptr, sizeof(ccf_cond_var_t));
+	kmem_free(zcw->zcw_ccf_waiter_ptr->zcw_ccf_ptr, sizeof(ccf_cond_var_t));
+	kmem_free(zcw->zcw_ccf_waiter_ptr, sizeof(ccf_waiter_t));
 
 	cv_destroy(&zcw->zcw_cv);
 	kmem_cache_free(zil_zcw_cache, zcw);
