@@ -608,9 +608,19 @@ static void get_cmts_callback(struct sk_buff *skb)
 						{
 							if (iterations % 100000 == 0)
 							{
-								if (!list_is_empty(consumer_list_handle))
-									printk(KERN_INFO "get_cmts_callback: watchpoint #2: timeout.. waiting for pool %s (datasetname=%s, prev_cmt.name=%s, are equal=%d), iteration no=%d, consumer_list_handle empty=%d\n",
-										get_cmt->poolname, latest_cmt->name, prev_tail_cmt.name, (memcmp(latest_cmt->name, prev_tail_cmt.name, sizeof(latest_cmt->name)) == 0), iterations, list_is_empty(consumer_list_handle));
+								if (!list_is_empty(consumer_list_handle)) {
+									latest_cmt_node = list_head(consumer_list_handle);
+									if (latest_cmt_node == NULL) {
+										printk(KERN_INFO "get_cmts_callback (POSSIBLE ISSUE): watchpoint #2: timeout.. waiting for pool %s (datasetname=%s (%llu), prev_cmt.name=%s (%llu), are equal=%d), iteration no=%d, consumer_list_handle empty=%d\n",
+											get_cmt->poolname, "NULL", 0, prev_tail_cmt.name, (u_longlong_t)prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ], 0, iterations, list_is_empty(consumer_list_handle));
+										continue;
+									}
+									else {
+										latest_cmt = latest_cmt_node->cmt;
+										printk(KERN_INFO "get_cmts_callback: watchpoint #2: timeout.. waiting for pool %s (datasetname=%s (%llu), prev_cmt.name=%s (%llu), are equal=%d), iteration no=%d, consumer_list_handle empty=%d\n",
+											get_cmt->poolname, latest_cmt->name, (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], prev_tail_cmt.name, (u_longlong_t)prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ], (memcmp(latest_cmt->name, prev_tail_cmt.name, sizeof(latest_cmt->name)) == 0), iterations, list_is_empty(consumer_list_handle));
+									}
+								}
 								else {
 									printk(KERN_INFO "get_cmts_callback: watchpoint #2: timeout.. waiting for pool %s (prev_cmt.name=%s), iteration no=%d, consumer_list_handle empty=%d\n",
 										get_cmt->poolname, prev_tail_cmt.name, iterations, list_is_empty(consumer_list_handle));
@@ -630,8 +640,8 @@ static void get_cmts_callback(struct sk_buff *skb)
 							latest_cmt = latest_cmt_node->cmt;
 
 							if (latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ] != prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] || (memcmp(latest_cmt->name, prev_tail_cmt.name, sizeof(latest_cmt->name)) != 0)) {
-								printk(KERN_INFO "get_cmts_callback: rc=%d, got new cmt to send: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu current pid=%d\n", 
-									rc, (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], current->pid);
+								printk(KERN_INFO "get_cmts_callback: rc=%d, got new cmt to send: latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ]=%llu current pid=%d (latest_cmt->name=%s, prev_tail_cmt.name=%s, equal=%d)\n", 
+									rc, (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], current->pid, latest_cmt->name, prev_tail_cmt.name, (memcmp(latest_cmt->name, prev_tail_cmt.name, sizeof(latest_cmt->name)) == 0));
 								break;
 							}
 						}
@@ -655,8 +665,10 @@ static void get_cmts_callback(struct sk_buff *skb)
 												  latest_cmt->blk_digest);
 				
 				prev_tail_cmt.blk_num.zc_word[ZIL_ZC_SEQ] = latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ];
+				printk(KERN_INFO "get_cmts_callback (release ccf_lock): To send zil_blk_id=%llu current pid=%d (latest_cmt->name=%s, prev_tail_cmt.name=%s, equal=%d)\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], current->pid, 
+			    					latest_cmt->name, prev_tail_cmt.name, (memcmp(latest_cmt->name, prev_tail_cmt.name, sizeof(latest_cmt->name)) == 0));
 				memcpy(prev_tail_cmt.name, latest_cmt->name, sizeof(latest_cmt->name));
-				printk(KERN_INFO "get_cmts_callback (release ccf_lock): To send zil_blk_id=%llu current pid=%d\n", (u_longlong_t)latest_cmt->blk_num.zc_word[ZIL_ZC_SEQ], current->pid);
+
 				mutex_exit(&ccf_lock);
 			}
 
